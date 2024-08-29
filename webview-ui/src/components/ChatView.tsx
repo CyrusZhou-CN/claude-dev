@@ -1,5 +1,5 @@
 import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
-import { KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import vsDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus"
 import DynamicTextArea from "react-textarea-autosize"
 import { useEvent, useMount } from "react-use"
@@ -14,7 +14,6 @@ import { vscode } from "../utils/vscode"
 import Announcement from "./Announcement"
 import ChatRow from "./ChatRow"
 import HistoryPreview from "./HistoryPreview"
-import KoduPromo from "./KoduPromo"
 import TaskHeader from "./TaskHeader"
 import Thumbnails from "./Thumbnails"
 
@@ -44,8 +43,6 @@ const ChatView = ({
 		themeName: vscodeThemeName,
 		apiConfiguration,
 		uriScheme,
-		shouldShowKoduPromo,
-		koduCredits,
 	} = useExtensionState()
 
 	//const task = messages.length > 0 ? (messages[0].say === "task" ? messages[0] : undefined) : undefined) : undefined
@@ -58,6 +55,8 @@ const ChatView = ({
 	const textAreaRef = useRef<HTMLTextAreaElement>(null)
 	const [textAreaDisabled, setTextAreaDisabled] = useState(false)
 	const [isTextAreaFocused, setIsTextAreaFocused] = useState(false)
+	const textAreaContainerRef = useRef<HTMLDivElement>(null)
+	const [textAreaContainerHeight, setTextAreaContainerHeight] = useState(51)
 	const [selectedImages, setSelectedImages] = useState<string[]>([])
 	const [thumbnailsHeight, setThumbnailsHeight] = useState(0)
 
@@ -460,6 +459,17 @@ const ChatView = ({
 		selectedImages.length >= MAX_IMAGES_PER_MESSAGE ||
 		isInputPipingToStdin
 
+	useLayoutEffect(() => {
+		if (textAreaContainerRef.current) {
+			let height = textAreaContainerRef.current.clientHeight
+			// some browsers return 0 for clientHeight
+			if (!height) {
+				height = textAreaContainerRef.current.getBoundingClientRect().height
+			}
+			setTextAreaContainerHeight(height)
+		}
+	}, [])
+
 	return (
 		<div
 			style={{
@@ -483,7 +493,6 @@ const ChatView = ({
 					totalCost={apiMetrics.totalCost}
 					onClose={handleTaskCloseButtonClick}
 					isHidden={isHidden}
-					koduCredits={koduCredits}
 					vscodeUriScheme={uriScheme}
 					apiProvider={apiConfiguration?.apiProvider}
 				/>
@@ -496,9 +505,6 @@ const ChatView = ({
 							apiConfiguration={apiConfiguration}
 							vscodeUriScheme={uriScheme}
 						/>
-					)}
-					{apiConfiguration?.koduApiKey === undefined && !showAnnouncement && shouldShowKoduPromo && (
-						<KoduPromo style={{ margin: "10px 15px -10px 15px" }} />
 					)}
 					<div style={{ padding: "0 20px", flexGrow: taskHistory.length > 0 ? undefined : 1 }}>
 						<h2>What can I do for you?</h2>
@@ -580,6 +586,7 @@ const ChatView = ({
 			)}
 
 			<div
+				ref={textAreaContainerRef}
 				style={{
 					padding: "10px 15px",
 					opacity: textAreaDisabled ? 0.5 : 1,
@@ -655,28 +662,30 @@ const ChatView = ({
 					style={{
 						position: "absolute",
 						right: 20,
-						bottom: 14.5, // Align with the bottom padding of the container
 						display: "flex",
-						alignItems: "flex-end",
-						height: "calc(100% - 20px)", // Full height minus top and bottom padding
+						alignItems: "flex-center",
+						height: textAreaContainerHeight - 20,
+						bottom: 10,
 					}}>
-					<VSCodeButton
-						disabled={shouldDisableImages}
-						appearance="icon"
-						aria-label="Attach Images"
-						onClick={selectImages}
-						style={{ marginRight: "2px" }}>
-						<span
-							className="codicon codicon-device-camera"
-							style={{ fontSize: 18.5, marginLeft: -2, marginBottom: 0.5 }}></span>
-					</VSCodeButton>
-					<VSCodeButton
-						disabled={textAreaDisabled}
-						appearance="icon"
-						aria-label="Send Message"
-						onClick={handleSendMessage}>
-						<span className="codicon codicon-send" style={{ fontSize: 16.5, marginTop: 2 }}></span>
-					</VSCodeButton>
+					<div style={{ display: "flex", flexDirection: "row", alignItems: "center" }}>
+						<VSCodeButton
+							disabled={shouldDisableImages}
+							appearance="icon"
+							aria-label="Attach Images"
+							onClick={selectImages}
+							style={{ marginRight: "2px" }}>
+							<span
+								className="codicon codicon-device-camera"
+								style={{ fontSize: 18, marginLeft: -2 }}></span>
+						</VSCodeButton>
+						<VSCodeButton
+							disabled={textAreaDisabled}
+							appearance="icon"
+							aria-label="Send Message"
+							onClick={handleSendMessage}>
+							<span className="codicon codicon-send" style={{ fontSize: 16, marginBottom: -1 }}></span>
+						</VSCodeButton>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -25,7 +25,7 @@ import { HistoryItem } from "./shared/HistoryItem"
 import { combineApiRequests } from "./shared/combineApiRequests"
 import { combineCommandSequences } from "./shared/combineCommandSequences"
 import { findLastIndex } from "./utils"
-import { slidingWindowContextManagement } from "./utils/context-management"
+import { isWithinContextWindow, truncateHalfConversation } from "./utils/context-management"
 
 const SYSTEM_PROMPT =
 	() => `You are Claude Dev, a highly skilled software developer with extensive knowledge in many programming languages, frameworks, design patterns, and best practices.
@@ -37,9 +37,9 @@ CAPABILITIES
 - You can read and analyze code in various programming languages, and can write clean, efficient, and well-documented code.
 - You can debug complex issues and providing detailed explanations, offering architectural insights and design patterns.
 - You have access to tools that let you execute CLI commands on the user's computer, list files in a directory (top level or recursively), extract source code definitions, read and write files, and ask follow-up questions. These tools help you effectively accomplish a wide range of tasks, such as writing code, making edits or improvements to existing files, understanding the current state of a project, performing system operations, and much more.
-- You can use the list_files_recursive tool to get an overview of the project's file structure, which can provide key insights into the project from directory/file names (how developers conceptualize and organize their code) or file extensions (the language used). The list_files_top_level tool is better suited for generic directories you don't necessarily need the nested structure of, like the Desktop.
+- When the user initially gives you a task, a recursive list of all filepaths in the current working directory ('${cwd}') will be included in potentially_relevant_details. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current working directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.
 - You can use the view_source_code_definitions_top_level tool to get an overview of source code definitions for all files at the top level of a specified directory. This can be particularly useful when you need to understand the broader context and relationships between certain parts of the code. You may need to call this tool multiple times to understand various parts of the codebase related to the task.
-	- For example, when asked to make edits or improvements you might use list_files_recursive to get an overview of the project's file structure, then view_source_code_definitions_top_level to get an overview of source code definitions for files located in relevant directories, then read_file to examine the contents of relevant files, analyze the code and suggest improvements or make necessary edits, then use the write_to_file tool to implement changes.
+	- For example, when asked to make edits or improvements you might analyze the file structure in the initial potentially_relevant_details to get an overview of the project, then use view_source_code_definitions_top_level to get further insight using source code definitions for files located in relevant directories, then read_file to examine the contents of relevant files, analyze the code and suggest improvements or make necessary edits, then use the write_to_file tool to implement changes.
 - The execute_command tool lets you run commands on the user's computer and should be used whenever you feel it can help accomplish the user's task. When you need to execute a CLI command, you must provide a clear explanation of what the command does. Prefer to execute complex CLI commands over creating executable scripts, since they are more flexible and easier to run. Interactive and long-running commands are allowed, since the user has the ability to send input to stdin and terminate the command on their own if needed.
 
 ====
@@ -50,19 +50,19 @@ RULES
 - You cannot \`cd\` into a different directory to complete a task. You are stuck operating from '${cwd}', so be sure to pass in the correct 'path' parameter when using tools that require a path.
 - Do not use the ~ character or $HOME to refer to the home directory.
 - Before using the execute_command tool, you must first think about the SYSTEM INFORMATION context provided to understand the user's environment and tailor your commands to ensure they are compatible with their system. You must also consider if the command you need to run should be executed in a specific directory outside of the current working directory '${cwd}', and if so prepend with \`cd\`'ing into that directory && then executing the command (as one command since you are stuck operating from '${cwd}'). For example, if you needed to run \`npm install\` in a project outside of '${cwd}', you would need to prepend with a \`cd\` i.e. pseudocode for this would be \`cd (path to project) && (command, in this case npm install)\`.
-- When editing files, always provide the complete file content in your response, regardless of the extent of changes. DO NOT use placeholder comments like '//rest of code unchanged' or '//code remains the same'. You MUST include all parts of the file, even if they haven't been modified.
 - If you need to read or edit a file you have already read or edited, you can assume its contents have not changed since then (unless specified otherwise by the user) and skip using the read_file tool before proceeding.
 - When creating a new project (such as an app, website, or any software project), organize all new files within a dedicated project directory unless the user specifies otherwise. Use appropriate file paths when writing files, as the write_to_file tool will automatically create any necessary directories. Structure the project logically, adhering to best practices for the specific type of project being created. Unless otherwise specified, new projects should be easily run without additional setup, for example most projects can be built in HTML, CSS, and JavaScript - which you can open in a browser.
 - You must try to use multiple tools in one request when possible. For example if you were to create a website, you would use the write_to_file tool to create the necessary files with their appropriate contents all at once. Or if you wanted to analyze a project, you could use the read_file tool multiple times to look at several key files. This will help you accomplish the user's task more efficiently.
 - Be sure to consider the type of project (e.g. Python, JavaScript, web application) when determining the appropriate structure and files to include. Also consider what files may be most relevant to accomplishing the task, for example looking at a project's manifest file would help you understand the project's dependencies, which you could incorporate into any code you write.
 - When making changes to code, always consider the context in which the code is being used. Ensure that your changes are compatible with the existing codebase and that they follow the project's coding standards and best practices.
 - Do not ask for more information than necessary. Use the tools provided to accomplish the user's request efficiently and effectively. When you've completed your task, you must use the attempt_completion tool to present the result to the user. The user may provide feedback, which you can use to make improvements and try again.
-- You are only allowed to ask the user questions using the ask_followup_question tool. Use this tool only when you need additional details to complete a task, and be sure to use a clear and concise question that will help you move forward with the task. However if you can use the available tools to avoid having to ask the user questions, you should do so. For example if you need to know the name of a file, you can use the list files tool to get the name yourself. If the user refers to something vague, you can use the list_files_recursive tool to get a better understanding of the project to see if that helps you clear up any confusion.
+- You are only allowed to ask the user questions using the ask_followup_question tool. Use this tool only when you need additional details to complete a task, and be sure to use a clear and concise question that will help you move forward with the task. However if you can use the available tools to avoid having to ask the user questions, you should do so.
 - Your goal is to try to accomplish the user's task, NOT engage in a back and forth conversation.
 - NEVER end completion_attempt with a question or request to engage in further conversation! Formulate the end of your result in a way that is final and does not require further input from the user. 
 - NEVER start your responses with affirmations like "Certainly", "Okay", "Sure", "Great", etc. You should NOT be conversational in your responses, but rather direct and to the point.
 - Feel free to use markdown as much as you'd like in your responses. When using code blocks, always include a language specifier.
 - When presented with images, utilize your vision capabilities to thoroughly examine them and extract meaningful information. Incorporate these insights into your thought process as you accomplish the user's task.
+- CRITICAL: When editing files with write_to_file, ALWAYS provide the COMPLETE file content in your response. This is NON-NEGOTIABLE. Partial updates or placeholders like '// rest of code unchanged' are STRICTLY FORBIDDEN. You MUST include ALL parts of the file, even if they haven't been modified. Failure to do so will result in incomplete or broken code, severely impacting the user's project.
 
 ====
 
@@ -106,9 +106,9 @@ const tools: Tool[] = [
 		},
 	},
 	{
-		name: "list_files_top_level",
+		name: "list_files",
 		description:
-			"List all files and directories at the top level of the specified directory. This should only be used for generic directories you don't necessarily need the nested structure of, like the Desktop.",
+			"List files and directories within the specified directory. If recursive is true, it will list all files and directories recursively. If recursive is false or not provided, it will only list the top-level contents.",
 		input_schema: {
 			type: "object",
 			properties: {
@@ -116,20 +116,11 @@ const tools: Tool[] = [
 					type: "string",
 					description: `The path of the directory to list contents for (relative to the current working directory ${cwd})`,
 				},
-			},
-			required: ["path"],
-		},
-	},
-	{
-		name: "list_files_recursive",
-		description:
-			"Recursively list all files and directories within the specified directory. This provides a comprehensive view of the project structure, and can guide decision-making on which files to process or explore further.",
-		input_schema: {
-			type: "object",
-			properties: {
-				path: {
+				recursive: {
 					type: "string",
-					description: `The path of the directory to recursively list contents for (relative to the current working directory ${cwd})`,
+					enum: ["true", "false"],
+					description:
+						"Whether to list files recursively. Use 'true' for recursive listing, 'false' or omit for top-level only.",
 				},
 			},
 			required: ["path"],
@@ -459,7 +450,7 @@ export class ClaudeDev {
 
 		let textBlock: Anthropic.TextBlockParam = {
 			type: "text",
-			text: `<task>\n${task}\n</task>\n\n${this.getPotentiallyRelevantDetails()}`, // cannot be sent with system prompt since it's cached and these details can change
+			text: `<task>\n${task}\n</task>\n\n${await this.getPotentiallyRelevantDetails(true)}`, // cannot be sent with system prompt since it's cached and these details can change
 		}
 		let imageBlocks: Anthropic.ImageBlockParam[] = this.formatImagesIntoBlocks(images)
 		await this.say("text", task, images)
@@ -637,7 +628,7 @@ export class ClaudeDev {
 			(newUserContentText
 				? `\n\nNew instructions for task continuation:\n<user_message>\n${newUserContentText}\n</user_message>\n`
 				: "") +
-			`\n\n${this.getPotentiallyRelevantDetails()}`
+			`\n\n${await this.getPotentiallyRelevantDetails()}`
 
 		const newUserContentImages = newUserContent.filter((block) => block.type === "image")
 		const combinedModifiedOldUserContentWithNewUserContent: UserContent = (
@@ -691,10 +682,8 @@ export class ClaudeDev {
 				return this.writeToFile(toolInput.path, toolInput.content, isLastWriteToFile)
 			case "read_file":
 				return this.readFile(toolInput.path)
-			case "list_files_top_level":
-				return this.listFilesTopLevel(toolInput.path)
-			case "list_files_recursive":
-				return this.listFilesRecursive(toolInput.path)
+			case "list_files":
+				return this.listFiles(toolInput.path, toolInput.recursive)
 			case "view_source_code_definitions_top_level":
 				return this.viewSourceCodeDefinitionsTopLevel(toolInput.path)
 			case "execute_command":
@@ -802,7 +791,7 @@ export class ClaudeDev {
 					}
 					if (response === "messageResponse") {
 						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 					}
 					return "The user denied this operation."
 				}
@@ -839,7 +828,7 @@ export class ClaudeDev {
 					}
 					if (response === "messageResponse") {
 						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 					}
 					return "The user denied this operation."
 				}
@@ -898,7 +887,7 @@ export class ClaudeDev {
 				if (response !== "yesButtonTapped") {
 					if (response === "messageResponse") {
 						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 					}
 					return "The user denied this operation."
 				}
@@ -915,21 +904,22 @@ export class ClaudeDev {
 		}
 	}
 
-	async listFilesTopLevel(relDirPath?: string): Promise<ToolResponse> {
+	async listFiles(relDirPath?: string, recursiveRaw?: string): Promise<ToolResponse> {
 		if (relDirPath === undefined) {
 			await this.say(
 				"error",
-				"Claude tried to use list_files_top_level without value for required parameter 'path'. Retrying..."
+				"Claude tried to use list_files without value for required parameter 'path'. Retrying..."
 			)
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
 		try {
+			const recursive = recursiveRaw?.toLowerCase() === "true"
 			const absolutePath = path.resolve(cwd, relDirPath)
-			const files = await listFiles(absolutePath, false)
+			const files = await listFiles(absolutePath, recursive)
 			const result = this.formatFilesList(absolutePath, files)
 
 			const message = JSON.stringify({
-				tool: "listFilesTopLevel",
+				tool: recursive ? "listFilesRecursive" : "listFilesTopLevel",
 				path: this.getReadablePath(relDirPath),
 				content: result,
 			} as ClaudeSayTool)
@@ -940,7 +930,7 @@ export class ClaudeDev {
 				if (response !== "yesButtonTapped") {
 					if (response === "messageResponse") {
 						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 					}
 					return "The user denied this operation."
 				}
@@ -954,48 +944,6 @@ export class ClaudeDev {
 				`Error listing files and directories:\n${
 					error.message ?? JSON.stringify(serializeError(error), null, 2)
 				}`
-			)
-			return errorString
-		}
-	}
-
-	async listFilesRecursive(relDirPath?: string): Promise<ToolResponse> {
-		if (relDirPath === undefined) {
-			await this.say(
-				"error",
-				"Claude tried to use list_files_recursive without value for required parameter 'path'. Retrying..."
-			)
-			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
-		}
-		try {
-			const absolutePath = path.resolve(cwd, relDirPath)
-			const files = await listFiles(absolutePath, true)
-			const result = this.formatFilesList(absolutePath, files)
-
-			const message = JSON.stringify({
-				tool: "listFilesRecursive",
-				path: this.getReadablePath(relDirPath),
-				content: result,
-			} as ClaudeSayTool)
-			if (this.alwaysAllowReadOnly) {
-				await this.say("tool", message)
-			} else {
-				const { response, text, images } = await this.ask("tool", message)
-				if (response !== "yesButtonTapped") {
-					if (response === "messageResponse") {
-						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
-					}
-					return "The user denied this operation."
-				}
-			}
-
-			return result
-		} catch (error) {
-			const errorString = `Error listing files recursively: ${JSON.stringify(serializeError(error))}`
-			await this.say(
-				"error",
-				`Error listing files recursively:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`
 			)
 			return errorString
 		}
@@ -1074,7 +1022,7 @@ export class ClaudeDev {
 				if (response !== "yesButtonTapped") {
 					if (response === "messageResponse") {
 						await this.say("user_feedback", text, images)
-						return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+						return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 					}
 					return "The user denied this operation."
 				}
@@ -1105,7 +1053,7 @@ export class ClaudeDev {
 		if (response !== "yesButtonTapped") {
 			if (response === "messageResponse") {
 				await this.say("user_feedback", text, images)
-				return this.formatIntoToolResponse(this.formatGenericToolFeedback(text), images)
+				return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
 			}
 			return "The user denied this operation."
 		}
@@ -1253,16 +1201,24 @@ The following additional instructions are provided by the user. They should be f
 ${this.customInstructions.trim()}
 `
 			}
-			const adjustedMessages = slidingWindowContextManagement(
+			const isPromptWithinContextWindow = isWithinContextWindow(
 				this.api.getModel().info.contextWindow,
+				systemPrompt,
+				tools,
+				this.apiConversationHistory
+			)
+			if (!isPromptWithinContextWindow) {
+				const truncatedMessages = truncateHalfConversation(this.apiConversationHistory)
+				await this.overwriteApiConversationHistory(truncatedMessages)
+			}
+			const { message, userCredits } = await this.api.createMessage(
 				systemPrompt,
 				this.apiConversationHistory,
 				tools
 			)
-			const { message, userCredits } = await this.api.createMessage(systemPrompt, adjustedMessages, tools)
 			if (userCredits !== undefined) {
-				console.log("Updating kodu credits", userCredits)
-				this.providerRef.deref()?.updateKoduCredits(userCredits)
+				console.log("Updating credits", userCredits)
+				// TODO: update credits
 			}
 			return message
 		} catch (error) {
@@ -1454,26 +1410,39 @@ ${this.customInstructions.trim()}
 
 	// Prompts
 
-	getPotentiallyRelevantDetails() {
-		// TODO: add more details
-		return `<potentially_relevant_details>
-VSCode Visible Files: ${
-			vscode.window.visibleTextEditors
-				?.map((editor) => editor.document?.uri?.fsPath)
-				.filter(Boolean)
-				.join(", ") || "(No files open)"
+	async getPotentiallyRelevantDetails(verbose: boolean = false) {
+		let details = `<potentially_relevant_details>
+# VSCode Visible Files:
+${
+	vscode.window.visibleTextEditors
+		?.map((editor) => editor.document?.uri?.fsPath)
+		.filter(Boolean)
+		.map((absolutePath) => path.relative(cwd, absolutePath))
+		.join("\n") || "(No files open)"
+}
+
+# VSCode Opened Tabs:
+${
+	vscode.window.tabGroups.all
+		.flatMap((group) => group.tabs)
+		.map((tab) => (tab.input as vscode.TabInputText)?.uri?.fsPath)
+		.filter(Boolean)
+		.map((absolutePath) => path.relative(cwd, absolutePath))
+		.join("\n") || "(No tabs open)"
+}
+`
+
+		if (verbose) {
+			const files = await listFiles(cwd, true)
+			const result = this.formatFilesList(cwd, files)
+			details += `\n# Current Working Directory Project Structure:\n${result}\n`
 		}
-VSCode Opened Tabs: ${
-			vscode.window.tabGroups.all
-				.flatMap((group) => group.tabs)
-				.map((tab) => (tab.input as vscode.TabInputText)?.uri?.fsPath)
-				.filter(Boolean)
-				.join(", ") || "(No tabs open)"
-		}
-</potentially_relevant_details>`
+
+		details += "</potentially_relevant_details>"
+		return details
 	}
 
-	formatGenericToolFeedback(feedback?: string) {
-		return `The user denied this operation and provided the following feedback:\n<feedback>\n${feedback}\n</feedback>\n\n${this.getPotentiallyRelevantDetails()}`
+	async formatGenericToolFeedback(feedback?: string) {
+		return `The user denied this operation and provided the following feedback:\n<feedback>\n${feedback}\n</feedback>\n\n${await this.getPotentiallyRelevantDetails()}`
 	}
 }

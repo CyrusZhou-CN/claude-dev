@@ -10,15 +10,12 @@ export interface WebviewMessage {
 		| "newTask"
 		| "askResponse"
 		| "clearTask"
-		| "didCloseAnnouncement"
+		| "didShowAnnouncement"
 		| "selectImages"
 		| "exportCurrentTask"
 		| "showTaskWithId"
 		| "deleteTaskWithId"
 		| "exportTaskWithId"
-		| "didClickKoduSignOut"
-		| "fetchKoduCredits"
-		| "didDismissKoduPromo"
 		| "resetState"
 	text?: string
 	askResponse?: ClaudeAskResponse

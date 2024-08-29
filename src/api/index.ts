@@ -3,7 +3,7 @@ import { ApiConfiguration, ApiModelId, ModelInfo } from "../shared/api"
 import { AnthropicHandler } from "./anthropic"
 import { AwsBedrockHandler } from "./bedrock"
 import { OpenRouterHandler } from "./openrouter"
-import { KoduHandler } from "./kodu"
+import { VertexHandler } from "./vertex"
 
 export interface ApiHandlerMessageResponse {
 	message: Anthropic.Messages.Message
@@ -38,8 +38,8 @@ export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
 			return new OpenRouterHandler(options)
 		case "bedrock":
 			return new AwsBedrockHandler(options)
-		case "kodu":
-			return new KoduHandler(options)
+		case "vertex":
+			return new VertexHandler(options)
 		default:
 			return new AnthropicHandler(options)
 	}

@@ -1,6 +1,5 @@
 import { VSCodeDropdown, VSCodeLink, VSCodeOption, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { useEvent } from "react-use"
+import React, { useMemo } from "react"
 import {
 	ApiConfiguration,
 	ApiModelId,
@@ -9,26 +8,20 @@ import {
 	anthropicModels,
 	bedrockDefaultModelId,
 	bedrockModels,
-	koduDefaultModelId,
-	koduModels,
 	openRouterDefaultModelId,
 	openRouterModels,
+	vertexDefaultModelId,
+	vertexModels,
 } from "../../../src/shared/api"
-import { ExtensionMessage } from "../../../src/shared/ExtensionMessage"
-import { getKoduAddCreditsUrl, getKoduHomepageUrl, getKoduSignInUrl } from "../../../src/shared/kodu"
-import { vscode } from "../utils/vscode"
-import VSCodeButtonLink from "./VSCodeButtonLink"
 import { useExtensionState } from "../context/ExtensionStateContext"
 
 interface ApiOptionsProps {
 	showModelOptions: boolean
 	apiErrorMessage?: string
-	setDidAuthKodu?: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessage, setDidAuthKodu }) => {
-	const { apiConfiguration, setApiConfiguration, koduCredits, uriScheme } = useExtensionState()
-	const [, setDidFetchKoduCredits] = useState(false)
+const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessage }) => {
+	const { apiConfiguration, setApiConfiguration } = useExtensionState()
 	const handleInputChange = (field: keyof ApiConfiguration) => (event: any) => {
 		setApiConfiguration({ ...apiConfiguration, [field]: event.target.value })
 	}
@@ -69,27 +62,6 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 		)
 	}
 
-	useEffect(() => {
-		if (selectedProvider === "kodu" && apiConfiguration?.koduApiKey && koduCredits === undefined) {
-			setDidFetchKoduCredits(false)
-			vscode.postMessage({ type: "fetchKoduCredits" })
-		}
-	}, [selectedProvider, apiConfiguration?.koduApiKey, koduCredits])
-
-	const handleMessage = useCallback((e: MessageEvent) => {
-		const message: ExtensionMessage = e.data
-		switch (message.type) {
-			case "action":
-				switch (message.action) {
-					case "koduCreditsFetched":
-						setDidFetchKoduCredits(true)
-						break
-				}
-				break
-		}
-	}, [])
-	useEvent("message", handleMessage)
-
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
 			<div className="dropdown-container">
@@ -97,10 +69,10 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 					<span style={{ fontWeight: 500 }}>API Provider</span>
 				</label>
 				<VSCodeDropdown id="api-provider" value={selectedProvider} onChange={handleInputChange("apiProvider")}>
-					<VSCodeOption value="kodu">Kodu</VSCodeOption>
 					<VSCodeOption value="anthropic">Anthropic</VSCodeOption>
 					<VSCodeOption value="bedrock">AWS Bedrock</VSCodeOption>
 					<VSCodeOption value="openrouter">OpenRouter</VSCodeOption>
+					<VSCodeOption value="vertex">GCP Vertex AI</VSCodeOption>
 				</VSCodeDropdown>
 			</div>
 
@@ -109,6 +81,7 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 					<VSCodeTextField
 						value={apiConfiguration?.apiKey || ""}
 						style={{ width: "100%" }}
+						type="password"
 						onInput={handleInputChange("apiKey")}
 						placeholder="Enter API Key...">
 						<span style={{ fontWeight: 500 }}>Anthropic API Key</span>
@@ -132,6 +105,7 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 					<VSCodeTextField
 						value={apiConfiguration?.openRouterApiKey || ""}
 						style={{ width: "100%" }}
+						type="password"
 						onInput={handleInputChange("openRouterApiKey")}
 						placeholder="Enter API Key...">
 						<span style={{ fontWeight: 500 }}>OpenRouter API Key</span>
@@ -154,61 +128,12 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 				</div>
 			)}
 
-			{selectedProvider === "kodu" && (
-				<div>
-					{apiConfiguration?.koduApiKey !== undefined ? (
-						<>
-							<div style={{ marginBottom: 5, marginTop: 3 }}>
-								<span style={{ color: "var(--vscode-descriptionForeground)" }}>
-									Signed in as {apiConfiguration?.koduEmail || "Unknown"}
-								</span>{" "}
-								<VSCodeLink
-									style={{ display: "inline" }}
-									onClick={() => vscode.postMessage({ type: "didClickKoduSignOut" })}>
-									(sign out?)
-								</VSCodeLink>
-							</div>
-							<div style={{ marginBottom: 7 }}>
-								Credits remaining:{" "}
-								<span style={{ fontWeight: 500, opacity: koduCredits !== undefined ? 1 : 0.6 }}>
-									{formatPrice(koduCredits || 0)}
-								</span>
-							</div>
-							<VSCodeButtonLink
-								href={getKoduAddCreditsUrl(uriScheme)}
-								style={{
-									width: "fit-content",
-								}}>
-								Add Credits
-							</VSCodeButtonLink>
-						</>
-					) : (
-						<div style={{ margin: "4px 0px" }}>
-							<VSCodeButtonLink href={getKoduSignInUrl(uriScheme)} onClick={() => setDidAuthKodu?.(true)}>
-								Sign in to Kodu
-							</VSCodeButtonLink>
-						</div>
-					)}
-					<p
-						style={{
-							fontSize: 12,
-							marginTop: 6,
-							color: "var(--vscode-descriptionForeground)",
-						}}>
-						Kodu is recommended for its high rate limits and access to the latest features like prompt
-						caching.
-						<VSCodeLink href={getKoduHomepageUrl()} style={{ display: "inline", fontSize: "12px" }}>
-							Learn more about Kodu here.
-						</VSCodeLink>
-					</p>
-				</div>
-			)}
-
 			{selectedProvider === "bedrock" && (
 				<div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
 					<VSCodeTextField
 						value={apiConfiguration?.awsAccessKey || ""}
 						style={{ width: "100%" }}
+						type="password"
 						onInput={handleInputChange("awsAccessKey")}
 						placeholder="Enter Access Key...">
 						<span style={{ fontWeight: 500 }}>AWS Access Key</span>
@@ -216,6 +141,7 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 					<VSCodeTextField
 						value={apiConfiguration?.awsSecretKey || ""}
 						style={{ width: "100%" }}
+						type="password"
 						onInput={handleInputChange("awsSecretKey")}
 						placeholder="Enter Secret Key...">
 						<span style={{ fontWeight: 500 }}>AWS Secret Key</span>
@@ -269,6 +195,55 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 				</div>
 			)}
 
+			{apiConfiguration?.apiProvider === "vertex" && (
+				<div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+					<VSCodeTextField
+						value={apiConfiguration?.vertexProjectId || ""}
+						style={{ width: "100%" }}
+						onInput={handleInputChange("vertexProjectId")}
+						placeholder="Enter Project ID...">
+						<span style={{ fontWeight: 500 }}>Google Cloud Project ID</span>
+					</VSCodeTextField>
+					<div className="dropdown-container">
+						<label htmlFor="vertex-region-dropdown">
+							<span style={{ fontWeight: 500 }}>Google Cloud Region</span>
+						</label>
+						<VSCodeDropdown
+							id="vertex-region-dropdown"
+							value={apiConfiguration?.vertexRegion || ""}
+							style={{ width: "100%" }}
+							onChange={handleInputChange("vertexRegion")}>
+							<VSCodeOption value="">Select a region...</VSCodeOption>
+							<VSCodeOption value="us-east5">us-east5</VSCodeOption>
+							<VSCodeOption value="us-central1">us-central1</VSCodeOption>
+							<VSCodeOption value="europe-west1">europe-west1</VSCodeOption>
+							<VSCodeOption value="europe-west4">europe-west4</VSCodeOption>
+							<VSCodeOption value="asia-southeast1">asia-southeast1</VSCodeOption>
+						</VSCodeDropdown>
+					</div>
+					<p
+						style={{
+							fontSize: "12px",
+							marginTop: "5px",
+							color: "var(--vscode-descriptionForeground)",
+						}}>
+						To use Google Cloud Vertex AI, you need to
+						<VSCodeLink
+							href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude#before_you_begin"
+							style={{ display: "inline" }}>
+							{
+								"1) create a Google Cloud account › enable the Vertex AI API › enable the desired Claude models,"
+							}
+						</VSCodeLink>{" "}
+						<VSCodeLink
+							href="https://cloud.google.com/docs/authentication/provide-credentials-adc#google-idp"
+							style={{ display: "inline" }}>
+							{"2) install the Google Cloud CLI › configure Application Default Credentials."}
+						</VSCodeLink>
+					</p>
+				</div>
+			)}
+
 			{apiErrorMessage && (
 				<p
 					style={{
@@ -289,7 +264,7 @@ const ApiOptions: React.FC<ApiOptionsProps> = ({ showModelOptions, apiErrorMessa
 						{selectedProvider === "anthropic" && createDropdown(anthropicModels)}
 						{selectedProvider === "openrouter" && createDropdown(openRouterModels)}
 						{selectedProvider === "bedrock" && createDropdown(bedrockModels)}
-						{selectedProvider === "kodu" && createDropdown(koduModels)}
+						{selectedProvider === "vertex" && createDropdown(vertexModels)}
 					</div>
 
 					<ModelInfoView modelInfo={selectedModelInfo} />
@@ -393,8 +368,8 @@ export function normalizeApiConfiguration(apiConfiguration?: ApiConfiguration) {
 			return getProviderData(openRouterModels, openRouterDefaultModelId)
 		case "bedrock":
 			return getProviderData(bedrockModels, bedrockDefaultModelId)
-		case "kodu":
-			return getProviderData(koduModels, koduDefaultModelId)
+		case "vertex":
+			return getProviderData(vertexModels, vertexDefaultModelId)
 		default:
 			return getProviderData(anthropicModels, anthropicDefaultModelId)
 	}
