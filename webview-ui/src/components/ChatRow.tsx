@@ -571,20 +571,47 @@ const ChatRow: React.FC<ChatRowProps> = ({
 						/>
 					</>
 				)
-			case "viewSourceCodeDefinitionsTopLevel":
+			case "listCodeDefinitionNames":
 				return (
 					<>
 						<div style={headerStyle}>
 							{toolIcon("file-code")}
 							<span style={{ fontWeight: "bold" }}>
 								{message.type === "ask"
-									? "Claude wants to view source code definitions in files at the top level of this directory:"
-									: "Claude viewed source code definitions in files at the top level of this directory:"}
+									? "Claude wants to view source code definition names used in this directory:"
+									: "Claude viewed source code definition names used in this directory:"}
 							</span>
 						</div>
 						<CodeBlock
 							code={tool.content!}
 							path={tool.path!}
+							syntaxHighlighterStyle={syntaxHighlighterStyle}
+							isExpanded={isExpanded}
+							onToggleExpand={onToggleExpand}
+						/>
+					</>
+				)
+			case "searchFiles":
+				return (
+					<>
+						<div style={headerStyle}>
+							{toolIcon("search")}
+							<span style={{ fontWeight: "bold" }}>
+								{message.type === "ask" ? (
+									<>
+										Claude wants to search this directory for <code>{tool.regex}</code>:
+									</>
+								) : (
+									<>
+										Claude searched this directory for <code>{tool.regex}</code>:
+									</>
+								)}
+							</span>
+						</div>
+						<CodeBlock
+							code={tool.content!}
+							path={tool.path! + (tool.filePattern ? `/(${tool.filePattern})` : "")}
+							language="plaintext"
 							syntaxHighlighterStyle={syntaxHighlighterStyle}
 							isExpanded={isExpanded}
 							onToggleExpand={onToggleExpand}
