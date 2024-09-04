@@ -1,9 +1,11 @@
 import { Anthropic } from "@anthropic-ai/sdk"
-import { ApiConfiguration, ApiModelId, ModelInfo } from "../shared/api"
+import { ApiConfiguration, ModelInfo } from "../shared/api"
 import { AnthropicHandler } from "./anthropic"
 import { AwsBedrockHandler } from "./bedrock"
 import { OpenRouterHandler } from "./openrouter"
 import { VertexHandler } from "./vertex"
+import { OpenAiHandler } from "./openai"
+import { OllamaHandler } from "./ollama"
 
 export interface ApiHandlerMessageResponse {
 	message: Anthropic.Messages.Message
@@ -26,7 +28,7 @@ export interface ApiHandler {
 		>
 	): any
 
-	getModel(): { id: ApiModelId; info: ModelInfo }
+	getModel(): { id: string; info: ModelInfo }
 }
 
 export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
@@ -40,6 +42,10 @@ export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
 			return new AwsBedrockHandler(options)
 		case "vertex":
 			return new VertexHandler(options)
+		case "openai":
+			return new OpenAiHandler(options)
+		case "ollama":
+			return new OllamaHandler(options)
 		default:
 			return new AnthropicHandler(options)
 	}

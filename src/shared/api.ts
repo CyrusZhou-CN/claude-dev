@@ -1,14 +1,19 @@
-export type ApiProvider = "anthropic" | "openrouter" | "bedrock" | "vertex"
+export type ApiProvider = "anthropic" | "openrouter" | "bedrock" | "vertex" | "openai" | "ollama"
 
 export interface ApiHandlerOptions {
-	apiModelId?: ApiModelId
+	apiModelId?: string
 	apiKey?: string // anthropic
 	openRouterApiKey?: string
 	awsAccessKey?: string
 	awsSecretKey?: string
+	awsSessionToken?: string
 	awsRegion?: string
 	vertexProjectId?: string
 	vertexRegion?: string
+	openAiBaseUrl?: string
+	openAiApiKey?: string
+	openAiModelId?: string
+	ollamaModelId?: string
 }
 
 export type ApiConfiguration = ApiHandlerOptions & {
@@ -27,8 +32,6 @@ export interface ModelInfo {
 	cacheWritesPrice?: number
 	cacheReadsPrice?: number
 }
-
-export type ApiModelId = AnthropicModelId | OpenRouterModelId | BedrockModelId | VertexModelId
 
 // Anthropic
 // https://docs.anthropic.com/en/docs/about-claude/models
@@ -291,3 +294,12 @@ export const vertexModels = {
 		outputPrice: 1.25,
 	},
 } as const satisfies Record<string, ModelInfo>
+
+export const openAiModelInfoSaneDefaults: ModelInfo = {
+	maxTokens: -1,
+	contextWindow: 128_000,
+	supportsImages: true,
+	supportsPromptCache: false,
+	inputPrice: 0,
+	outputPrice: 0,
+}

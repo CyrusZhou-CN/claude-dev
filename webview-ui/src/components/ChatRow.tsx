@@ -64,6 +64,13 @@ const ChatRow: React.FC<ChatRowProps> = ({
 						style={{ color: errorColor, marginBottom: "-1.5px" }}></span>,
 					<span style={{ color: errorColor, fontWeight: "bold" }}>Error</span>,
 				]
+			case "mistake_limit_reached":
+				return [
+					<span
+						className="codicon codicon-error"
+						style={{ color: errorColor, marginBottom: "-1.5px" }}></span>,
+					<span style={{ color: errorColor, fontWeight: "bold" }}>Claude is having trouble...</span>,
+				]
 			case "command":
 				return [
 					isCommandExecuting ? (
@@ -86,7 +93,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 				]
 			case "api_req_started":
 				return [
-					cost ? (
+					cost != null ? (
 						<span
 							className="codicon codicon-check"
 							style={{ color: successColor, marginBottom: "-1.5px" }}></span>
@@ -97,7 +104,7 @@ const ChatRow: React.FC<ChatRowProps> = ({
 					) : (
 						ProgressIndicator
 					),
-					cost ? (
+					cost != null ? (
 						<span style={{ color: normalColor, fontWeight: "bold" }}>API Request Complete</span>
 					) : apiRequestFailedMessage ? (
 						<span style={{ color: errorColor, fontWeight: "bold" }}>API Request Failed</span>
@@ -259,7 +266,9 @@ const ChatRow: React.FC<ChatRowProps> = ({
 									<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
 										{icon}
 										{title}
-										{cost && <VSCodeBadge>${Number(cost)?.toFixed(4)}</VSCodeBadge>}
+										{cost != null && cost > 0 && (
+											<VSCodeBadge>${Number(cost)?.toFixed(4)}</VSCodeBadge>
+										)}
 									</div>
 									<VSCodeButton
 										appearance="icon"
@@ -403,6 +412,16 @@ const ChatRow: React.FC<ChatRowProps> = ({
 				switch (message.ask) {
 					case "tool":
 						return renderTool(message, headerStyle)
+					case "mistake_limit_reached":
+						return (
+							<>
+								<div style={headerStyle}>
+									{icon}
+									{title}
+								</div>
+								<p style={{ ...pStyle, color: "var(--vscode-errorForeground)" }}>{message.text}</p>
+							</>
+						)
 					case "command":
 						const splitMessage = (text: string) => {
 							const outputIndex = text.indexOf(COMMAND_OUTPUT_STRING)

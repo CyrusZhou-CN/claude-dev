@@ -267,6 +267,7 @@ export class ClaudeDev {
 	private askResponseImages?: string[]
 	private lastMessageTs?: number
 	private executeCommandRunningProcess?: ResultPromise
+	private consecutiveMistakeCount: number = 0
 	private shouldSkipNextApiReqStartedMessage = false
 	private providerRef: WeakRef<ClaudeDevProvider>
 	private abort: boolean = false
@@ -714,6 +715,7 @@ export class ClaudeDev {
 						text: "If you have completed the user's task, use the attempt_completion tool. If you require additional information from the user, use the ask_followup_question tool. Otherwise, if you have not completed the task and do not need additional information, then proceed with the next step of the task. (This is an automated message, so do not respond to it conversationally.)",
 					},
 				]
+				this.consecutiveMistakeCount++
 			}
 		}
 	}
@@ -777,18 +779,19 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use write_to_file without value for required parameter 'path'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
 
 		if (newContent === undefined) {
-			// Special message for this case since this tends to happen the most
 			await this.say(
 				"error",
 				`Claude tried to use write_to_file for '${relPath}' without value for required parameter 'content'. This is likely due to output token limits. Retrying...`
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'content'. Please retry with complete response."
 		}
-
+		this.consecutiveMistakeCount = 0
 		try {
 			const absolutePath = path.resolve(cwd, relPath)
 			const fileExists = await fs
@@ -808,19 +811,31 @@ export class ClaudeDev {
 				originalContent = ""
 			}
 
-			// Create a temporary file with the new content
-			const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-dev-"))
-			const tempFilePath = path.join(tempDir, path.basename(absolutePath))
-			await fs.writeFile(tempFilePath, newContent)
+			const fileName = path.basename(absolutePath)
 
-			vscode.commands.executeCommand(
+			// Windows file locking issues can prevent temporary files from being saved or closed properly.
+			// To avoid these problems, we use in-memory TextDocument objects with the `untitled` scheme.
+			// This method keeps the document entirely in memory, bypassing the filesystem and ensuring
+			// a consistent editing experience across all platforms. This also has the added benefit of not
+			// polluting the user's workspace with temporary files.
+
+			// Create an in-memory document for the new content
+			const uri = vscode.Uri.parse(`untitled:${fileName}`) // untitled scheme is necessary to open a file without it being saved to disk
+			const inMemoryDocument = await vscode.workspace.openTextDocument(uri)
+			const edit = new vscode.WorkspaceEdit()
+			edit.insert(uri, new vscode.Position(0, 0), newContent)
+			await vscode.workspace.applyEdit(edit)
+
+			// Show diff
+			await vscode.commands.executeCommand(
 				"vscode.diff",
-				vscode.Uri.parse(`claude-dev-diff:${path.basename(absolutePath)}`).with({
+				vscode.Uri.parse(`claude-dev-diff:${fileName}`).with({
 					query: Buffer.from(originalContent).toString("base64"),
 				}),
-				vscode.Uri.file(tempFilePath),
-				`${path.basename(absolutePath)}: ${fileExists ? "Original ↔ Claude's Changes" : "New File"} (Editable)`
+				inMemoryDocument.uri,
+				`${fileName}: ${fileExists ? "Original ↔ Claude's Changes" : "New File"} (Editable)`
 			)
+			await vscode.commands.executeCommand("workbench.action.focusSideBar")
 
 			let userResponse: {
 				response: ClaudeAskResponse
@@ -848,22 +863,10 @@ export class ClaudeDev {
 			}
 			const { response, text, images } = userResponse
 
-			// Save any unsaved changes in the diff editor
-			const diffDocument = vscode.workspace.textDocuments.find((doc) => doc.uri.fsPath === tempFilePath)
-			if (diffDocument && diffDocument.isDirty) {
-				console.log("saving diff document")
-				await diffDocument.save()
-			}
-
 			if (response !== "yesButtonTapped") {
+				await vscode.window.showTextDocument(inMemoryDocument.uri, { preview: true, preserveFocus: false })
+				await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor")
 				await this.closeDiffViews()
-				// Clean up the temporary file
-				try {
-					await fs.rm(tempDir, { recursive: true, force: true })
-				} catch (error) {
-					// deleting temp file failed (seems to happen on some windows machines), which is okay since system will clean it up anyways
-					console.error(`Error deleting temporary directory: ${error}`)
-				}
 				if (response === "messageResponse") {
 					await this.say("user_feedback", text, images)
 					return this.formatIntoToolResponse(await this.formatGenericToolFeedback(text), images)
@@ -871,43 +874,55 @@ export class ClaudeDev {
 				return "The user denied this operation."
 			}
 
-			// Read the potentially edited content from the temp file
-			const editedContent = await fs.readFile(tempFilePath, "utf-8")
+			// Read the potentially edited content from the in-memory document
+			const editedContent = inMemoryDocument.getText()
 			if (!fileExists) {
 				await fs.mkdir(path.dirname(absolutePath), { recursive: true })
 			}
 			await fs.writeFile(absolutePath, editedContent)
 
-			// Clean up the temporary file
-			try {
-				await fs.rm(tempDir, { recursive: true, force: true })
-			} catch (error) {
-				console.error(`Error deleting temporary directory: ${error}`)
-			}
-
-			// Finish by opening the edited file in the editor
-			await vscode.window.showTextDocument(vscode.Uri.file(absolutePath), { preview: false })
+			// Close the in-memory doc
+			await vscode.window.showTextDocument(inMemoryDocument.uri, { preview: true, preserveFocus: false })
+			await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor")
 			await this.closeDiffViews()
 
-			if (editedContent !== newContent) {
-				const diffResult = diff.createPatch(relPath, originalContent, editedContent)
-				const userDiff = diff.createPatch(relPath, newContent, editedContent)
+			// Finish by opening the edited file in the editor
+			// calling showTextDocument would sometimes fail even though changes were applied, so we'll ignore these one-off errors (likely due to vscode locking issues)
+			try {
+				const openEditor = vscode.window.visibleTextEditors.find((editor) => {
+					return editor.document.uri.fsPath === absolutePath
+				})
+				if (openEditor) {
+					// File is already open, show the tab and focus on it
+					await vscode.window.showTextDocument(openEditor.document, openEditor.viewColumn)
+				} else {
+					// If not open, open the file
+					const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath))
+					await vscode.window.showTextDocument(document, { preview: false })
+				}
+			} catch (error) {
+				// Handle errors more gracefully
+				console.log(`Could not open editor for ${absolutePath}: ${error}`)
+			}
+			// await vscode.window.showTextDocument(vscode.Uri.file(absolutePath), { preview: false })
+
+			// If the edited content has different EOL characters, we don't want to show a diff with all the EOL differences.
+			const newContentEOL = newContent.includes("\r\n") ? "\r\n" : "\n"
+			const normalizedEditedContent = editedContent.replace(/\r\n|\n/g, newContentEOL)
+			const normalizedNewContent = newContent.replace(/\r\n|\n/g, newContentEOL) // just in case the new content has a mix of varying EOL characters
+			if (normalizedEditedContent !== normalizedNewContent) {
+				const userDiff = diff.createPatch(relPath, normalizedNewContent, normalizedEditedContent)
 				await this.say(
 					"user_feedback_diff",
 					JSON.stringify({
 						tool: fileExists ? "editedExistingFile" : "newFileCreated",
 						path: this.getReadablePath(relPath),
-						diff: this.createPrettyPatch(relPath, newContent, editedContent),
+						diff: this.createPrettyPatch(relPath, normalizedNewContent, normalizedEditedContent),
 					} as ClaudeSayTool)
 				)
-				return `The user accepted but made the following changes to your content:\n\n${userDiff}\n\nFinal result ${
-					fileExists ? "applied to" : "written as new file"
-				} ${relPath}:\n\n${diffResult}`
+				return `The user made the following updates to your content:\n\n${userDiff}\n\nThe updated content was successfully saved to ${relPath}.`
 			} else {
-				const diffResult = diff.createPatch(relPath, originalContent, newContent)
-				return `${
-					fileExists ? `Changes applied to ${relPath}:\n\n${diffResult}` : `New file written to ${relPath}`
-				}`
+				return `The content was successfully saved to ${relPath}.`
 			}
 		} catch (error) {
 			const errorString = `Error writing file: ${JSON.stringify(serializeError(error))}`
@@ -930,14 +945,10 @@ export class ClaudeDev {
 		const tabs = vscode.window.tabGroups.all
 			.map((tg) => tg.tabs)
 			.flat()
-			.filter((tab) => {
-				if (tab.input instanceof vscode.TabInputTextDiff) {
-					const originalPath = (tab.input.original as vscode.Uri).toString()
-					const modifiedPath = (tab.input.modified as vscode.Uri).toString()
-					return originalPath.includes("claude-dev-") || modifiedPath.includes("claude-dev-")
-				}
-				return false
-			})
+			.filter(
+				(tab) =>
+					tab.input instanceof vscode.TabInputTextDiff && tab.input?.original?.scheme === "claude-dev-diff"
+			)
 
 		for (const tab of tabs) {
 			await vscode.window.tabGroups.close(tab)
@@ -950,8 +961,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use read_file without value for required parameter 'path'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		try {
 			const absolutePath = path.resolve(cwd, relPath)
 			const content = await extractTextFromFile(absolutePath)
@@ -991,8 +1004,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use list_files without value for required parameter 'path'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		try {
 			const recursive = recursiveRaw?.toLowerCase() === "true"
 			const absolutePath = path.resolve(cwd, relDirPath)
@@ -1095,8 +1110,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use list_code_definition_names without value for required parameter 'path'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		try {
 			const absolutePath = path.resolve(cwd, relDirPath)
 			const result = await parseSourceCodeForDefinitionsTopLevel(absolutePath)
@@ -1138,17 +1155,18 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use search_files without value for required parameter 'path'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'path'. Please retry with complete response."
 		}
-
 		if (regex === undefined) {
 			await this.say(
 				"error",
 				`Claude tried to use search_files without value for required parameter 'regex'. Retrying...`
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'regex'. Please retry with complete response."
 		}
-
+		this.consecutiveMistakeCount = 0
 		try {
 			const absolutePath = path.resolve(cwd, relDirPath)
 			const results = await regexSearchFiles(cwd, absolutePath, regex, filePattern)
@@ -1191,8 +1209,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use execute_command without value for required parameter 'command'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'command'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		const { response, text, images } = await this.ask("command", command)
 		if (response !== "yesButtonTapped") {
 			if (response === "messageResponse") {
@@ -1320,8 +1340,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use ask_followup_question without value for required parameter 'question'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'question'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		const { text, images } = await this.ask("followup", question)
 		await this.say("user_feedback", text ?? "", images)
 		return this.formatIntoToolResponse(`<answer>\n${text}\n</answer>`, images)
@@ -1334,8 +1356,10 @@ export class ClaudeDev {
 				"error",
 				"Claude tried to use attempt_completion without value for required parameter 'result'. Retrying..."
 			)
+			this.consecutiveMistakeCount++
 			return "Error: Missing value for required parameter 'result'. Please retry with complete response."
 		}
+		this.consecutiveMistakeCount = 0
 		let resultToSend = result
 		if (command) {
 			await this.say("completion_result", resultToSend)
@@ -1420,6 +1444,25 @@ ${this.customInstructions.trim()}
 	async recursivelyMakeClaudeRequests(userContent: UserContent): Promise<ClaudeRequestResult> {
 		if (this.abort) {
 			throw new Error("ClaudeDev instance aborted")
+		}
+
+		if (this.consecutiveMistakeCount >= 3) {
+			const { response, text, images } = await this.ask(
+				"mistake_limit_reached",
+				`This may indicate a failure in his thought process or inability to use a tool properly, which can be alleviated with some user direction (e.g. "let's try breaking this large file down into smaller files").`
+			)
+			if (response === "messageResponse") {
+				userContent.push(
+					...[
+						{
+							type: "text",
+							text: `You seem to be having trouble proceeding. The user has provided the following feedback to help guide you:\n<feedback>\n${text}\n</feedback>\n\n${await this.getPotentiallyRelevantDetails()}`,
+						} as Anthropic.Messages.TextBlockParam,
+						...this.formatImagesIntoBlocks(images),
+					]
+				)
+			}
+			this.consecutiveMistakeCount = 0
 		}
 
 		await this.addToApiConversationHistory({ role: "user", content: userContent })
