@@ -541,6 +541,16 @@ export class ClaudeDev {
 			.slice()
 			.reverse()
 			.find((m) => !(m.ask === "resume_task" || m.ask === "resume_completed_task")) // could be multiple resume tasks
+		// const lastClaudeMessage = this.claudeMessages[lastClaudeMessageIndex]
+		// could be a completion result with a command
+		// const secondLastClaudeMessage = this.claudeMessages
+		// 	.slice()
+		// 	.reverse()
+		// 	.find(
+		// 		(m, index) =>
+		// 			index !== lastClaudeMessageIndex && !(m.ask === "resume_task" || m.ask === "resume_completed_task")
+		// 	)
+		// (lastClaudeMessage?.ask === "command" && secondLastClaudeMessage?.ask === "completion_result")
 
 		let askType: ClaudeAsk
 		if (lastClaudeMessage?.ask === "completion_result") {
@@ -1637,7 +1647,9 @@ ${this.customInstructions.trim()}
 		if (this.consecutiveMistakeCount >= 3) {
 			const { response, text, images } = await this.ask(
 				"mistake_limit_reached",
-				`This may indicate a failure in his thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "let's try breaking this large file down into smaller files").`
+				this.api.getModel().id.includes("claude")
+					? `This may indicate a failure in his thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "let's try breaking this large file down into smaller files").`
+					: "Claude Dev uses complex prompts and iterative task execution that may be challenging for less capable models. For best results, it's recommended to use Claude 3.5 Sonnet for its advanced agentic coding capabilities."
 			)
 			if (response === "messageResponse") {
 				userContent.push(
