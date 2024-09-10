@@ -1,13 +1,12 @@
 import { VSCodeBadge, VSCodeButton, VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react"
+import deepEqual from "fast-deep-equal"
 import React, { memo, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import { ClaudeMessage, ClaudeSayTool } from "../../../src/shared/ExtensionMessage"
 import { COMMAND_OUTPUT_STRING } from "../../../src/shared/combineCommandSequences"
 import CodeAccordian from "./CodeAccordian"
-import CodeBlock from "./CodeBlock"
-import Terminal from "./Terminal"
+import CodeBlock, { CODE_BLOCK_BG_COLOR } from "./CodeBlock"
 import Thumbnails from "./Thumbnails"
-import deepEqual from "fast-deep-equal"
 
 interface ChatRowProps {
 	message: ClaudeMessage
@@ -15,7 +14,6 @@ interface ChatRowProps {
 	onToggleExpand: () => void
 	lastModifiedMessage?: ClaudeMessage
 	isLast: boolean
-	handleSendStdin: (text: string) => void
 }
 
 const ChatRow = memo(
@@ -36,14 +34,7 @@ const ChatRow = memo(
 
 export default ChatRow
 
-const ChatRowContent = ({
-	message,
-	isExpanded,
-	onToggleExpand,
-	lastModifiedMessage,
-	isLast,
-	handleSendStdin,
-}: ChatRowProps) => {
+const ChatRowContent = ({ message, isExpanded, onToggleExpand, lastModifiedMessage, isLast }: ChatRowProps) => {
 	const cost = useMemo(() => {
 		if (message.text != null && message.say === "api_req_started") {
 			return JSON.parse(message.text).cost
@@ -361,8 +352,8 @@ const ChatRowContent = ({
 							{isExpanded && (
 								<div style={{ marginTop: "10px" }}>
 									<CodeAccordian
-										code={JSON.stringify(JSON.parse(message.text || "{}").request, null, 2)}
-										language="json"
+										code={JSON.parse(message.text || "{}").request}
+										language="markdown"
 										isExpanded={true}
 										onToggleExpand={onToggleExpand}
 									/>
@@ -447,6 +438,38 @@ const ChatRowContent = ({
 							</div>
 						</>
 					)
+				case "shell_integration_warning":
+					return (
+						<>
+							<div
+								style={{
+									display: "flex",
+									flexDirection: "column",
+									backgroundColor: "rgba(255, 191, 0, 0.1)",
+									padding: 8,
+									borderRadius: 3,
+									fontSize: 12,
+								}}>
+								<div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+									<i
+										className="codicon codicon-warning"
+										style={{
+											marginRight: 8,
+											fontSize: 18,
+											color: "#FFA500",
+										}}></i>
+									<span style={{ fontWeight: 500, color: "#FFA500" }}>
+										Shell Integration Unavailable
+									</span>
+								</div>
+								<div>
+									Claude won't be able to view the command's output. Please update VSCode (CMD/CTRL +
+									Shift + P → Update) and make sure you're using a supported shell: bash, zsh, fish,
+									or PowerShell.
+								</div>
+							</div>
+						</>
+					)
 
 				default:
 					return (
@@ -483,7 +506,25 @@ const ChatRowContent = ({
 						}
 						return {
 							command: text.slice(0, outputIndex).trim(),
-							output: text.slice(outputIndex + COMMAND_OUTPUT_STRING.length).trim() + " ",
+							output: text
+								.slice(outputIndex + COMMAND_OUTPUT_STRING.length)
+								.trim()
+								.split("")
+								.map((char) => {
+									switch (char) {
+										case "\t":
+											return "→   "
+										case "\b":
+											return "⌫"
+										case "\f":
+											return "⏏"
+										case "\v":
+											return "⇳"
+										default:
+											return char
+									}
+								})
+								.join(""),
 						}
 					}
 
@@ -494,11 +535,41 @@ const ChatRowContent = ({
 								{icon}
 								{title}
 							</div>
-							<Terminal
+							{/* <Terminal
 								rawOutput={command + (output ? "\n" + output : "")}
-								handleSendStdin={handleSendStdin}
 								shouldAllowInput={!!isCommandExecuting && output.length > 0}
-							/>
+							/> */}
+							<div
+								style={{
+									borderRadius: 3,
+									border: "1px solid var(--vscode-sideBar-border)",
+									overflow: "hidden",
+									backgroundColor: CODE_BLOCK_BG_COLOR,
+								}}>
+								<CodeBlock source={`${"```"}shell\n${command}\n${"```"}`} forceWrap={true} />
+								{output.length > 0 && (
+									<div style={{ width: "100%" }}>
+										<div
+											onClick={onToggleExpand}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "4px",
+												width: "100%",
+												justifyContent: "flex-start",
+												cursor: "pointer",
+												padding: `2px 8px ${isExpanded ? 0 : 8}px 8px`,
+											}}>
+											<span
+												className={`codicon codicon-chevron-${
+													isExpanded ? "down" : "right"
+												}`}></span>
+											<span style={{ fontSize: "0.8em" }}>Command Output</span>
+										</div>
+										{isExpanded && <CodeBlock source={`${"```"}shell\n${output}\n${"```"}`} />}
+									</div>
+								)}
+							</div>
 						</>
 					)
 				case "completion_result":
