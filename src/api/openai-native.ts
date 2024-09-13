@@ -1,30 +1,24 @@
 import { Anthropic } from "@anthropic-ai/sdk"
-import OpenAI, { AzureOpenAI } from "openai"
+import OpenAI from "openai"
 import { ApiHandler, ApiHandlerMessageResponse } from "."
-import { ApiHandlerOptions, ModelInfo, openAiModelInfoSaneDefaults } from "../shared/api"
+import {
+	ApiHandlerOptions,
+	ModelInfo,
+	openAiNativeDefaultModelId,
+	OpenAiNativeModelId,
+	openAiNativeModels,
+} from "../shared/api"
 import { convertToAnthropicMessage, convertToOpenAiMessages } from "../utils/openai-format"
 
-export class OpenAiHandler implements ApiHandler {
+export class OpenAiNativeHandler implements ApiHandler {
 	private options: ApiHandlerOptions
 	private client: OpenAI
 
 	constructor(options: ApiHandlerOptions) {
 		this.options = options
-		// Azure API shape slightly differs from the core API shape: https://github.com/openai/openai-node?tab=readme-ov-file#microsoft-azure-openai
-		if (this.options.openAiBaseUrl?.toLowerCase().includes("azure.com")) {
-			this.client = new AzureOpenAI({
-				baseURL: this.options.openAiBaseUrl,
-				apiKey: this.options.openAiApiKey,
-				// https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation
-				// https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#api-specs
-				apiVersion: "2024-08-01-preview",
-			})
-		} else {
-			this.client = new OpenAI({
-				baseURL: this.options.openAiBaseUrl,
-				apiKey: this.options.openAiApiKey,
-			})
-		}
+		this.client = new OpenAI({
+			apiKey: this.options.openAiNativeApiKey,
+		})
 	}
 
 	async createMessage(
@@ -45,7 +39,8 @@ export class OpenAiHandler implements ApiHandler {
 			},
 		}))
 		const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-			model: this.options.openAiModelId ?? "",
+			model: this.getModel().id,
+			max_tokens: this.getModel().info.maxTokens,
 			messages: openAiMessages,
 			tools: openAiTools,
 			tool_choice: "auto",
@@ -59,10 +54,12 @@ export class OpenAiHandler implements ApiHandler {
 		return { message: anthropicMessage }
 	}
 
-	getModel(): { id: string; info: ModelInfo } {
-		return {
-			id: this.options.openAiModelId ?? "",
-			info: openAiModelInfoSaneDefaults,
+	getModel(): { id: OpenAiNativeModelId; info: ModelInfo } {
+		const modelId = this.options.apiModelId
+		if (modelId && modelId in openAiNativeModels) {
+			const id = modelId as OpenAiNativeModelId
+			return { id, info: openAiNativeModels[id] }
 		}
+		return { id: openAiNativeDefaultModelId, info: openAiNativeModels[openAiNativeDefaultModelId] }
 	}
 }

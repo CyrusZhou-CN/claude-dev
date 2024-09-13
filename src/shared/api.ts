@@ -1,4 +1,12 @@
-export type ApiProvider = "anthropic" | "openrouter" | "bedrock" | "vertex" | "openai" | "ollama"
+export type ApiProvider =
+	| "anthropic"
+	| "openrouter"
+	| "bedrock"
+	| "vertex"
+	| "openai"
+	| "ollama"
+	| "gemini"
+	| "openai-native"
 
 export interface ApiHandlerOptions {
 	apiModelId?: string
@@ -16,6 +24,8 @@ export interface ApiHandlerOptions {
 	openAiModelId?: string
 	ollamaModelId?: string
 	ollamaBaseUrl?: string
+	geminiApiKey?: string
+	openAiNativeApiKey?: string
 }
 
 export type ApiConfiguration = ApiHandlerOptions & {
@@ -200,17 +210,22 @@ export const openRouterModels = {
 	// 	outputPrice: 0.06,
 	// },
 	// OpenRouter needs to fix mapping gemini 1.5 responses for tool calls properly, they return content with line breaks formatted wrong (too many escapes), and throw errors for being in the wrong order when they're not. They also cannot handle feedback given to a request with multiple tools. Giving feedback to one tool use requests works fine. ("Please ensure that function response turn comes immediately after a function call turn. And the number of function response parts should be equal to number of function call parts of the function call turn.")
+	// UPDATE: I keep getting "400: Please ensure that function call turn comes immediately after a user turn or after a function response turn.", which gets fixed as soon as i switch to openrouter/claude, so it's obviously an error on openrouters end transforming the message structure. This is likely the culprit behind the tool order error people have seen with gpt4o.
 	// "google/gemini-pro-1.5": {
 	// 	maxTokens: 8192,
-	// 	supportsImages: false, // "Function Calling is not supported with non-text input"
+	// 	contextWindow: 2_097_152,
+	// 	supportsImages: true, // "Function Calling is not supported with non-text input"
+	// 	supportsPromptCache: false,
 	// 	inputPrice: 2.5,
 	// 	outputPrice: 7.5,
 	// },
 	// "google/gemini-flash-1.5": {
 	// 	maxTokens: 8192,
-	// 	supportsImages: false, // "Function Calling is not supported with non-text input"
-	// 	inputPrice: 0.25,
-	// 	outputPrice: 0.75,
+	// 	contextWindow: 1_048_576,
+	// 	supportsImages: true, // "Function Calling is not supported with non-text input"
+	// 	supportsPromptCache: false,
+	// 	inputPrice: 0.0375,
+	// 	outputPrice: 0.15,
 	// },
 	// "google/gemini-pro": {
 	// 	maxTokens: 8192,
@@ -305,3 +320,65 @@ export const openAiModelInfoSaneDefaults: ModelInfo = {
 	inputPrice: 0,
 	outputPrice: 0,
 }
+
+// Gemini
+// https://ai.google.dev/gemini-api/docs/models/gemini
+export type GeminiModelId = keyof typeof geminiModels
+export const geminiDefaultModelId: GeminiModelId = "gemini-1.5-flash-latest"
+export const geminiModels = {
+	"gemini-1.5-flash-latest": {
+		maxTokens: 8192,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gemini-1.5-pro-latest": {
+		maxTokens: 8192,
+		contextWindow: 2_097_152,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+} as const satisfies Record<string, ModelInfo>
+
+// OpenAI Native
+// https://openai.com/api/pricing/
+export type OpenAiNativeModelId = keyof typeof openAiNativeModels
+export const openAiNativeDefaultModelId: OpenAiNativeModelId = "o1-preview"
+export const openAiNativeModels = {
+	"o1-preview": {
+		maxTokens: 32_768,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 15,
+		outputPrice: 60,
+	},
+	"o1-mini": {
+		maxTokens: 65_536,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 3,
+		outputPrice: 12,
+	},
+	"gpt-4o": {
+		maxTokens: 4_096,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 5,
+		outputPrice: 15,
+	},
+	"gpt-4o-mini": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 0.15,
+		outputPrice: 0.6,
+	},
+} as const satisfies Record<string, ModelInfo>

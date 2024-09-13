@@ -4,9 +4,10 @@ import React, { memo, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import { ClaudeMessage, ClaudeSayTool } from "../../../src/shared/ExtensionMessage"
 import { COMMAND_OUTPUT_STRING } from "../../../src/shared/combineCommandSequences"
-import CodeAccordian from "./CodeAccordian"
+import CodeAccordian, { removeLeadingNonAlphanumeric } from "./CodeAccordian"
 import CodeBlock, { CODE_BLOCK_BG_COLOR } from "./CodeBlock"
 import Thumbnails from "./Thumbnails"
+import { vscode } from "../utils/vscode"
 
 interface ChatRowProps {
 	message: ClaudeMessage
@@ -190,12 +191,51 @@ const ChatRowContent = ({ message, isExpanded, onToggleExpand, lastModifiedMessa
 								{message.type === "ask" ? "Claude wants to read this file:" : "Claude read this file:"}
 							</span>
 						</div>
-						<CodeAccordian
+						{/* <CodeAccordian
 							code={tool.content!}
 							path={tool.path!}
 							isExpanded={isExpanded}
 							onToggleExpand={onToggleExpand}
-						/>
+						/> */}
+						<div
+							style={{
+								borderRadius: 3,
+								backgroundColor: CODE_BLOCK_BG_COLOR,
+								overflow: "hidden",
+								border: "1px solid var(--vscode-editorGroup-border)",
+							}}>
+							<div
+								style={{
+									color: "var(--vscode-descriptionForeground)",
+									display: "flex",
+									justifyContent: "space-between",
+									alignItems: "center",
+									padding: "9px 10px",
+									cursor: "pointer",
+									userSelect: "none",
+									WebkitUserSelect: "none",
+									MozUserSelect: "none",
+									msUserSelect: "none",
+								}}
+								onClick={() => {
+									vscode.postMessage({ type: "openFile", text: tool.content })
+								}}>
+								<span
+									style={{
+										whiteSpace: "nowrap",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										marginRight: "8px",
+										direction: "rtl",
+										textAlign: "left",
+									}}>
+									{removeLeadingNonAlphanumeric(tool.path ?? "") + "\u200E"}
+								</span>
+								<span
+									className={`codicon codicon-link-external`}
+									style={{ fontSize: 13.5, margin: "1px 0" }}></span>
+							</div>
+						</div>
 					</>
 				)
 			case "listFilesTopLevel":
@@ -380,7 +420,7 @@ const ChatRowContent = ({ message, isExpanded, onToggleExpand, lastModifiedMessa
 								backgroundColor: "var(--vscode-badge-background)",
 								color: "var(--vscode-badge-foreground)",
 								borderRadius: "3px",
-								padding: "8px",
+								padding: "9px",
 								whiteSpace: "pre-line",
 								wordWrap: "break-word",
 							}}>
@@ -455,9 +495,15 @@ const ChatRowContent = ({ message, isExpanded, onToggleExpand, lastModifiedMessa
 									</span>
 								</div>
 								<div>
-									Claude won't be able to view the command's output. Please update VSCode (CMD/CTRL +
-									Shift + P → Update) and make sure you're using a supported shell: bash, zsh, fish,
-									or PowerShell.
+									Claude won't be able to view the command's output. Please update VSCode (
+									<code>CMD/CTRL + Shift + P</code> → "Update") and make sure you're using a supported
+									shell: zsh, bash, fish, or PowerShell (<code>CMD/CTRL + Shift + P</code> →
+									"Terminal: Select Default Profile").{" "}
+									<a
+										href="https://github.com/saoudrizwan/claude-dev/wiki/Troubleshooting-%E2%80%90-Shell-Integration-Unavailable"
+										style={{ color: "inherit", textDecoration: "underline" }}>
+										Still having trouble?
+									</a>
 								</div>
 							</div>
 						</>

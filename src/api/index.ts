@@ -6,6 +6,8 @@ import { OpenRouterHandler } from "./openrouter"
 import { VertexHandler } from "./vertex"
 import { OpenAiHandler } from "./openai"
 import { OllamaHandler } from "./ollama"
+import { GeminiHandler } from "./gemini"
+import { OpenAiNativeHandler } from "./openai-native"
 
 export interface ApiHandlerMessageResponse {
 	message: Anthropic.Messages.Message
@@ -37,6 +39,10 @@ export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
 			return new OpenAiHandler(options)
 		case "ollama":
 			return new OllamaHandler(options)
+		case "gemini":
+			return new GeminiHandler(options)
+		case "openai-native":
+			return new OpenAiNativeHandler(options)
 		default:
 			return new AnthropicHandler(options)
 	}

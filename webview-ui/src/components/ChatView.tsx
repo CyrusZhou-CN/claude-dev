@@ -480,9 +480,15 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 					onClose={handleTaskCloseButtonClick}
 				/>
 			) : (
-				<>
+				<div
+					style={{
+						flexGrow: 1,
+						overflowY: "auto",
+						display: "flex",
+						flexDirection: "column",
+					}}>
 					{showAnnouncement && <Announcement version={version} hideAnnouncement={hideAnnouncement} />}
-					<div style={{ padding: "0 20px", flexGrow: taskHistory.length > 0 ? undefined : 1 }}>
+					<div style={{ padding: "0 20px", flexShrink: 0 }}>
 						<h2>What can I do for you?</h2>
 						<p>
 							Thanks to{" "}
@@ -497,7 +503,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 						</p>
 					</div>
 					{taskHistory.length > 0 && <HistoryPreview showHistoryView={showHistoryView} />}
-				</>
+				</div>
 			)}
 			{task && (
 				<>
@@ -607,7 +613,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 						// borderLeft: "9px solid transparent", // NOTE: react-textarea-autosize doesn't calculate correct height when using borderLeft/borderRight so we need to use horizontal padding instead
 						// Instead of using boxShadow, we use a div with a border to better replicate the behavior when the textarea is focused
 						// boxShadow: "0px 0px 0px 1px var(--vscode-input-border)",
-						padding: "0 53px 0 9px",
+						padding: "0 54px 0 9px",
 						cursor: textAreaDisabled ? "not-allowed" : undefined,
 						flex: 1,
 					}}

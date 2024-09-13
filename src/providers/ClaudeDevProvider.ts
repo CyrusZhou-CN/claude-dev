@@ -10,7 +10,7 @@ import fs from "fs/promises"
 import { HistoryItem } from "../shared/HistoryItem"
 import axios from "axios"
 import { getTheme } from "../utils/getTheme"
-import { openImage } from "../utils/open-image"
+import { openFile, openImage } from "../utils/open-file"
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -18,7 +18,15 @@ https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default
 https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/customSidebarViewProvider.ts
 */
 
-type SecretKey = "apiKey" | "openRouterApiKey" | "awsAccessKey" | "awsSecretKey" | "awsSessionToken" | "openAiApiKey"
+type SecretKey =
+	| "apiKey"
+	| "openRouterApiKey"
+	| "awsAccessKey"
+	| "awsSecretKey"
+	| "awsSessionToken"
+	| "openAiApiKey"
+	| "geminiApiKey"
+	| "openAiNativeApiKey"
 type GlobalStateKey =
 	| "apiProvider"
 	| "apiModelId"
@@ -329,6 +337,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 								ollamaModelId,
 								ollamaBaseUrl,
 								anthropicBaseUrl,
+								geminiApiKey,
+								openAiNativeApiKey,
 							} = message.apiConfiguration
 							await this.updateGlobalState("apiProvider", apiProvider)
 							await this.updateGlobalState("apiModelId", apiModelId)
@@ -346,6 +356,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 							await this.updateGlobalState("ollamaModelId", ollamaModelId)
 							await this.updateGlobalState("ollamaBaseUrl", ollamaBaseUrl)
 							await this.updateGlobalState("anthropicBaseUrl", anthropicBaseUrl)
+							await this.storeSecret("geminiApiKey", geminiApiKey)
+							await this.storeSecret("openAiNativeApiKey", openAiNativeApiKey)
 							this.claudeDev?.updateApi(message.apiConfiguration)
 						}
 						await this.postStateToWebview()
@@ -401,6 +413,9 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 						break
 					case "openImage":
 						openImage(message.text!)
+						break
+					case "openFile":
+						openFile(message.text!)
 						break
 					// Add more switch case statements here as more webview message commands
 					// are created within the webview context (i.e. inside media/main.js)
@@ -664,6 +679,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			ollamaModelId,
 			ollamaBaseUrl,
 			anthropicBaseUrl,
+			geminiApiKey,
+			openAiNativeApiKey,
 			lastShownAnnouncementId,
 			customInstructions,
 			alwaysAllowReadOnly,
@@ -685,6 +702,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			this.getGlobalState("ollamaModelId") as Promise<string | undefined>,
 			this.getGlobalState("ollamaBaseUrl") as Promise<string | undefined>,
 			this.getGlobalState("anthropicBaseUrl") as Promise<string | undefined>,
+			this.getSecret("geminiApiKey") as Promise<string | undefined>,
+			this.getSecret("openAiNativeApiKey") as Promise<string | undefined>,
 			this.getGlobalState("lastShownAnnouncementId") as Promise<string | undefined>,
 			this.getGlobalState("customInstructions") as Promise<string | undefined>,
 			this.getGlobalState("alwaysAllowReadOnly") as Promise<boolean | undefined>,
@@ -723,6 +742,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 				ollamaModelId,
 				ollamaBaseUrl,
 				anthropicBaseUrl,
+				geminiApiKey,
+				openAiNativeApiKey,
 			},
 			lastShownAnnouncementId,
 			customInstructions,
@@ -801,6 +822,8 @@ export class ClaudeDevProvider implements vscode.WebviewViewProvider {
 			"awsSecretKey",
 			"awsSessionToken",
 			"openAiApiKey",
+			"geminiApiKey",
+			"openAiNativeApiKey",
 		]
 		for (const key of secretKeys) {
 			await this.storeSecret(key, undefined)
