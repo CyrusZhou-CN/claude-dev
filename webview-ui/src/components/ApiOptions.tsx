@@ -12,7 +12,6 @@ import { useEvent, useInterval } from "react-use"
 import {
 	ApiConfiguration,
 	ModelInfo,
-	OpenAiNativeModelId,
 	anthropicDefaultModelId,
 	anthropicModels,
 	bedrockDefaultModelId,
@@ -114,12 +113,12 @@ const ApiOptions = ({ showModelOptions, apiErrorMessage }: ApiOptionsProps) => {
 					value={selectedProvider}
 					onChange={handleInputChange("apiProvider")}
 					style={{ minWidth: 130 }}>
-					<VSCodeOption value="anthropic">Anthropic</VSCodeOption>
-					<VSCodeOption value="openai-native">OpenAI</VSCodeOption>
 					<VSCodeOption value="openrouter">OpenRouter</VSCodeOption>
+					<VSCodeOption value="anthropic">Anthropic</VSCodeOption>
 					<VSCodeOption value="gemini">Google Gemini</VSCodeOption>
-					<VSCodeOption value="bedrock">AWS Bedrock</VSCodeOption>
 					<VSCodeOption value="vertex">GCP Vertex AI</VSCodeOption>
+					<VSCodeOption value="bedrock">AWS Bedrock</VSCodeOption>
+					<VSCodeOption value="openai-native">OpenAI</VSCodeOption>
 					<VSCodeOption value="openai">OpenAI Compatible</VSCodeOption>
 					<VSCodeOption value="ollama">Ollama</VSCodeOption>
 				</VSCodeDropdown>
@@ -547,7 +546,7 @@ export const formatPrice = (price: number) => {
 
 const ModelInfoView = ({ selectedModelId, modelInfo }: { selectedModelId: string; modelInfo: ModelInfo }) => {
 	const isGemini = Object.keys(geminiModels).includes(selectedModelId)
-	const isO1 = (["o1-preview", "o1-mini"] as OpenAiNativeModelId[]).includes(selectedModelId as OpenAiNativeModelId)
+	const isO1 = selectedModelId && selectedModelId.includes("o1")
 	return (
 		<p style={{ fontSize: "12px", marginTop: "2px", color: "var(--vscode-descriptionForeground)" }}>
 			<ModelInfoSupportsItem
@@ -598,8 +597,8 @@ const ModelInfoView = ({ selectedModelId, modelInfo }: { selectedModelId: string
 						style={{
 							fontStyle: "italic",
 						}}>
-						* Free up to {selectedModelId === geminiDefaultModelId ? "15" : "2"} requests per minute. After
-						that, billing depends on prompt size.{" "}
+						* Free up to {selectedModelId && selectedModelId.includes("flash") ? "15" : "2"} requests per
+						minute. After that, billing depends on prompt size.{" "}
 						<VSCodeLink
 							href="https://ai.google.dev/pricing"
 							style={{ display: "inline", fontSize: "inherit" }}>
@@ -614,8 +613,10 @@ const ModelInfoView = ({ selectedModelId, modelInfo }: { selectedModelId: string
 					<span
 						style={{
 							fontStyle: "italic",
+							color: "var(--vscode-errorForeground)",
 						}}>
-						* This model is newly released and may not be accessible to all users yet.
+						* This model does not support tool use or system prompts, so Claude Dev uses structured output
+						prompting to achieve similar results. Your mileage may vary.
 					</span>
 				</>
 			)}
