@@ -259,6 +259,7 @@ export class OpenRouterHandler implements ApiHandler {
 						role: "assistant",
 						content: textContent,
 						tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+						refusal: null,
 					},
 					finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
 					index: 0,
