@@ -1,4 +1,4 @@
-# Cline (prev. Claude Dev) – \#1 on OpenRouter
+# Cline – \#1 on OpenRouter
 
 <p align="center">
   <img src="https://media.githubusercontent.com/media/clinebot/cline/main/assets/docs/demo.gif" width="100%" />
@@ -122,4 +122,4 @@ To contribute to the project, start by exploring [open issues](https://github.co
 
 ## License
 
-[Apache 2.0 © 2024 Cline Inc.](./LICENSE)
+[Apache 2.0 © 2024 Cline Bot Inc.](./LICENSE)
