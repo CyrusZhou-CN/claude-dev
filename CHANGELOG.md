@@ -1,5 +1,25 @@
 # Change Log
 
+## [2.0.14]
+
+- Gracefully cancel requests while stream could be hanging
+
+## [2.0.13]
+
+- Detect code omission and show warning with troubleshooting link
+
+## [2.0.12]
+
+- Keep cursor out of the way during file edit streaming animation
+
+## [2.0.11]
+
+- Adjust prompts around read_file to prevent re-reading files unnecessarily
+
+## [2.0.10]
+
+- More adjustments to system prompt to prevent lazy coding
+
 ## [2.0.9]
 
 - Update system prompt to try to prevent Cline from lazy coding (`// rest of code here...`)
