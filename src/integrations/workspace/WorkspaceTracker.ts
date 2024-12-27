@@ -27,35 +27,24 @@ class WorkspaceTracker {
 	}
 
 	private registerListeners() {
-		// Create a file system watcher for all files
-		const watcher = vscode.workspace.createFileSystemWatcher('**')
+		const watcher = vscode.workspace.createFileSystemWatcher("**")
 
-		// Listen for file creation
 		this.disposables.push(
 			watcher.onDidCreate(async (uri) => {
 				await this.addFilePath(uri.fsPath)
 				this.workspaceDidUpdate()
-			})
+			}),
 		)
 
-		// Listen for file deletion
+		// Renaming files triggers a delete and create event
 		this.disposables.push(
 			watcher.onDidDelete(async (uri) => {
 				if (await this.removeFilePath(uri.fsPath)) {
 					this.workspaceDidUpdate()
 				}
-			})
+			}),
 		)
 
-		// Listen for file changes (which could include renames)
-		this.disposables.push(
-			watcher.onDidChange(async (uri) => {
-				await this.addFilePath(uri.fsPath)
-				this.workspaceDidUpdate()
-			})
-		)
-
-		// Add the watcher itself to disposables
 		this.disposables.push(watcher)
 	}
 
