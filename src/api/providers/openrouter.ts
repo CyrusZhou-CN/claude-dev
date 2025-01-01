@@ -97,7 +97,7 @@ export class OpenRouterHandler implements ApiHandler {
 		}
 
 		// Removes messages in the middle when close to context window limit. Should not be applied to models that support prompt caching since it would continuously break the cache.
-		const shouldApplyMiddleOutTransform = !this.getModel().info.supportsPromptCache
+		let shouldApplyMiddleOutTransform = !this.getModel().info.supportsPromptCache
 
 		// @ts-ignore-next-line
 		const stream = await this.client.chat.completions.create({
