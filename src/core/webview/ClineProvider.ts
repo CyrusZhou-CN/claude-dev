@@ -3,6 +3,7 @@ import axios from "axios"
 import fs from "fs/promises"
 import os from "os"
 import crypto from "crypto"
+import { execa } from "execa"
 import pWaitFor from "p-wait-for"
 import * as path from "path"
 import * as vscode from "vscode"
@@ -71,6 +72,7 @@ type GlobalStateKey =
 	| "browserSettings"
 	| "chatSettings"
 	| "vsCodeLmModelSelector"
+	| "localeLanguage"
 	| "userInfo"
 
 export const GlobalFileNames = {
@@ -578,6 +580,14 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 					case "refreshOpenRouterModels":
 						await this.refreshOpenRouterModels()
 						break
+					case "refreshOpenAiModels":
+						const { apiConfiguration } = await this.getState()
+						const openAiModels = await this.getOpenAiModels(
+							apiConfiguration.openAiBaseUrl,
+							apiConfiguration.openAiApiKey,
+						)
+						this.postMessageToWebview({ type: "openAiModels", openAiModels })
+						break
 					case "openImage":
 						openImage(message.text!)
 						break
@@ -725,8 +735,28 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 
 	// MCP
 
+	async getDocumentsPath(): Promise<string> {
+		if (process.platform === "win32") {
+			// If the user is running Win 7/Win Server 2008 r2+, we want to get the correct path to their Documents directory.
+			try {
+				const { stdout: docsPath } = await execa("powershell", [
+					"-NoProfile", // Ignore user's PowerShell profile(s)
+					"-Command",
+					"[System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::MyDocuments)",
+				])
+				return docsPath.trim()
+			} catch (err) {
+				console.error("Failed to retrieve Windows Documents path. Falling back to homedir/Documents.")
+				return path.join(os.homedir(), "Documents")
+			}
+		} else {
+			return path.join(os.homedir(), "Documents") // On POSIX (macOS, Linux, etc.), assume ~/Documents by default (existing behavior, but may want to implement similar logic here)
+		}
+	}
+
 	async ensureMcpServersDirectoryExists(): Promise<string> {
-		const mcpServersDir = path.join(os.homedir(), "Documents", "Cline", "MCP")
+		const userDocumentsPath = await this.getDocumentsPath()
+		const mcpServersDir = path.join(userDocumentsPath, "Cline", "MCP")
 		try {
 			await fs.mkdir(mcpServersDir, { recursive: true })
 		} catch (error) {
@@ -814,6 +844,32 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		} catch (error) {
 			console.error("Failed to handle auth callback:", error)
 			vscode.window.showErrorMessage("Failed to log in to Cline")
+		}
+	}
+
+	// OpenAi
+
+	async getOpenAiModels(baseUrl?: string, apiKey?: string) {
+		try {
+			if (!baseUrl) {
+				return []
+			}
+
+			if (!URL.canParse(baseUrl)) {
+				return []
+			}
+
+			const config: Record<string, any> = {}
+			if (apiKey) {
+				config["headers"] = { Authorization: `Bearer ${apiKey}` }
+			}
+
+			const response = await axios.get(`${baseUrl}/models`, config)
+			const modelsArray = response.data?.data?.map((model: any) => model.id) || []
+			const models = [...new Set<string>(modelsArray)]
+			return models
+		} catch (error) {
+			return []
 		}
 	}
 
@@ -1107,6 +1163,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			autoApprovalSettings,
 			browserSettings,
 			chatSettings,
+			localeLanguage: vscode.env.language,
 			isLoggedIn: !!authToken,
 			userInfo,
 		}
@@ -1198,6 +1255,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			browserSettings,
 			chatSettings,
 			vsCodeLmModelSelector,
+			localeLanguage,
 			userInfo,
 		] = await Promise.all([
 			this.getGlobalState("apiProvider") as Promise<ApiProvider | undefined>,
@@ -1233,6 +1291,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			this.getGlobalState("browserSettings") as Promise<BrowserSettings | undefined>,
 			this.getGlobalState("chatSettings") as Promise<ChatSettings | undefined>,
 			this.getGlobalState("vsCodeLmModelSelector") as Promise<vscode.LanguageModelChatSelector | undefined>,
+			this.getGlobalState("localeLanguage") as Promise<string | undefined>,
 			this.getGlobalState("userInfo") as Promise<UserInfo | undefined>,
 		])
 
