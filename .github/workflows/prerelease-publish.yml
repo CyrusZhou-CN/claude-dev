@@ -1,8 +1,8 @@
-name: Release & Publish
+name: Pre-release Publisher
 
 on:
     release:
-        types: [published]
+        types: [prereleased]
     workflow_dispatch:
 
 permissions:
@@ -23,19 +23,20 @@ jobs:
     test:
         uses: ./.github/workflows/test.yml
 
-    release:
+    publish-prerelease:
         needs: test
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
 
-            - name: Setup Node.js environment
+            - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
-                  node-version: 20.15.1
+                  node-version: "20.15.1"
+                  cache: "npm"
 
-            # Cache root dependencies - only reuse if package-lock.json exactly matches
+            # Cache root dependencies
             - name: Cache root dependencies
               uses: actions/cache@v4
               id: root-cache
@@ -43,7 +44,7 @@ jobs:
                   path: node_modules
                   key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
 
-            # Cache webview-ui dependencies - only reuse if package-lock.json exactly matches
+            # Cache webview-ui dependencies
             - name: Cache webview-ui dependencies
               uses: actions/cache@v4
               id: webview-cache
@@ -65,19 +66,21 @@ jobs:
             - name: Install Publishing Tools
               run: npm install -g vsce ovsx
 
-            - name: Package and Publish Extension
+            - name: Package and Publish Pre-release
               env:
                   VSCE_PAT: ${{ secrets.VSCE_PAT }}
                   OVSX_PAT: ${{ secrets.OVSX_PAT }}
               run: |
                   current_package_version=$(node -p "require('./package.json').version")
-                  npm run publish:marketplace
-                  echo "Successfully published version $current_package_version to VS Code Marketplace"
+                  vsce package
+                  vsce publish --pre-release -p ${{ secrets.VSCE_PAT }}
+                  echo "Successfully published pre-release version $current_package_version to VS Code Marketplace"
 
-            - name: Create GitHub Release
+            - name: Create GitHub Pre-release
               uses: softprops/action-gh-release@v1
               with:
                   files: "*.vsix"
                   generate_release_notes: true
+                  prerelease: true
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
