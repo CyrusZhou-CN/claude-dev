@@ -74,6 +74,9 @@ type GlobalStateKey =
 	| "vsCodeLmModelSelector"
 	| "localeLanguage"
 	| "userInfo"
+	| "previousModeApiProvider"
+	| "previousModeModelId"
+	| "previousModeModelInfo"
 
 export const GlobalFileNames = {
 	apiConversationHistory: "api_conversation_history.json",
@@ -244,7 +247,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 
 	async initClineWithTask(task?: string, images?: string[]) {
 		await this.clearTask() // ensures that an exising task doesn't exist before starting a new one, although this shouldn't be possible since user must clear task before starting a new one
-		const { apiConfiguration, customInstructions, autoApprovalSettings, browserSettings, chatSettings } =
+		const { apiConfiguration, customInstructions, localeLanguage, autoApprovalSettings, browserSettings, chatSettings } =
 			await this.getState()
 		this.cline = new Cline(
 			this,
@@ -253,6 +256,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			browserSettings,
 			chatSettings,
 			customInstructions,
+			localeLanguage,
 			task,
 			images,
 		)
@@ -260,7 +264,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 
 	async initClineWithHistoryItem(historyItem: HistoryItem) {
 		await this.clearTask()
-		const { apiConfiguration, customInstructions, autoApprovalSettings, browserSettings, chatSettings } =
+		const { apiConfiguration, customInstructions, localeLanguage, autoApprovalSettings, browserSettings, chatSettings } =
 			await this.getState()
 		this.cline = new Cline(
 			this,
@@ -269,6 +273,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			browserSettings,
 			chatSettings,
 			customInstructions,
+			localeLanguage,
 			undefined,
 			undefined,
 			historyItem,
@@ -499,6 +504,71 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 					case "chatSettings":
 						if (message.chatSettings) {
 							const didSwitchToActMode = message.chatSettings.mode === "act"
+
+							// Get previous model info that we will revert to after saving current mode api info
+							const {
+								apiConfiguration,
+								previousModeApiProvider: newApiProvider,
+								previousModeModelId: newModelId,
+								previousModeModelInfo: newModelInfo,
+							} = await this.getState()
+
+							// Save the last model used in this mode
+							await this.updateGlobalState("previousModeApiProvider", apiConfiguration.apiProvider)
+							switch (apiConfiguration.apiProvider) {
+								case "anthropic":
+								case "bedrock":
+								case "vertex":
+								case "gemini":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.apiModelId)
+									break
+								case "openrouter":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.openRouterModelId)
+									await this.updateGlobalState("previousModeModelInfo", apiConfiguration.openRouterModelInfo)
+									break
+								case "vscode-lm":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.vsCodeLmModelSelector)
+									break
+								case "openai":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.openAiModelId)
+									break
+								case "ollama":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.ollamaModelId)
+									break
+								case "lmstudio":
+									await this.updateGlobalState("previousModeModelId", apiConfiguration.lmStudioModelId)
+									break
+							}
+
+							// Restore the model used in previous mode
+							if (newApiProvider && newModelId) {
+								await this.updateGlobalState("apiProvider", newApiProvider)
+								switch (newApiProvider) {
+									case "anthropic":
+									case "bedrock":
+									case "vertex":
+									case "gemini":
+										await this.updateGlobalState("apiModelId", newModelId)
+										break
+									case "openrouter":
+										await this.updateGlobalState("openRouterModelId", newModelId)
+										await this.updateGlobalState("openRouterModelInfo", newModelInfo)
+										break
+									case "vscode-lm":
+										await this.updateGlobalState("vsCodeLmModelSelector", newModelId)
+										break
+									case "openai":
+										await this.updateGlobalState("openAiModelId", newModelId)
+										break
+									case "ollama":
+										await this.updateGlobalState("ollamaModelId", newModelId)
+										break
+									case "lmstudio":
+										await this.updateGlobalState("lmStudioModelId", newModelId)
+										break
+								}
+							}
+
 							await this.updateGlobalState("chatSettings", message.chatSettings)
 							await this.postStateToWebview()
 							if (this.cline) {
@@ -630,6 +700,9 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 					case "getLatestState":
 						await this.postStateToWebview()
 						break
+					case "subscribeEmail":
+						this.subscribeEmail(message.text)
+						break
 					case "accountLoginClicked": {
 						// Generate nonce for state validation
 						const nonce = crypto.randomBytes(32).toString("hex")
@@ -674,6 +747,10 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 						}
 						break
 					}
+					case "changeLanguage": {
+						await this.updateLocaleLanguage(message.text)
+						break
+					}
 					case "restartMcpServer": {
 						try {
 							await this.mcpHub?.restartConnection(message.text!)
@@ -697,6 +774,36 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			null,
 			this.disposables,
 		)
+	}
+
+	async subscribeEmail(email?: string) {
+		if (!email) {
+			return
+		}
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+		if (!emailRegex.test(email)) {
+			vscode.window.showErrorMessage("Please enter a valid email address")
+			return
+		}
+		console.log("Subscribing email:", email)
+		this.postMessageToWebview({ type: "emailSubscribed" })
+		// Currently ignoring errors to this endpoint, but after accounts we'll remove this anyways
+		try {
+			const response = await axios.post(
+				"https://app.cline.bot/api/mailing-list",
+				{
+					email: email,
+				},
+				{
+					headers: {
+						"Content-Type": "application/json",
+					},
+				},
+			)
+			console.log("Email subscribed successfully. Response:", response.data)
+		} catch (error) {
+			console.error("Failed to subscribe email:", error)
+		}
 	}
 
 	async cancelTask() {
@@ -733,6 +840,14 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		await this.updateGlobalState("customInstructions", instructions || undefined)
 		if (this.cline) {
 			this.cline.customInstructions = instructions || undefined
+		}
+		await this.postStateToWebview()
+	}
+
+	async updateLocaleLanguage(language?: string) {
+		await this.updateGlobalState("localeLanguage", language || undefined)
+		if (this.cline) {
+			this.cline.localeLanguage = language || undefined
 		}
 		await this.postStateToWebview()
 	}
@@ -1151,9 +1266,10 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			browserSettings,
 			chatSettings,
 			userInfo,
+			authToken,
+			localeLanguage,
 		} = await this.getState()
 
-		const authToken = await this.getSecret("authToken")
 		return {
 			version: this.context.extension?.packageJSON?.version ?? "",
 			apiConfiguration,
@@ -1167,7 +1283,8 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			autoApprovalSettings,
 			browserSettings,
 			chatSettings,
-			localeLanguage: vscode.env.language,
+			// FIXME: the vscode.env.language doesn't translate to the language specifiers we use in i18n. We need to know what values vscode uses and transform. For now this will always just lead to defaulting to English (see i18n.ts)
+			localeLanguage: localeLanguage || vscode.env.language,
 			isLoggedIn: !!authToken,
 			userInfo,
 		}
@@ -1261,6 +1378,10 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			vsCodeLmModelSelector,
 			localeLanguage,
 			userInfo,
+			authToken,
+			previousModeApiProvider,
+			previousModeModelId,
+			previousModeModelInfo,
 		] = await Promise.all([
 			this.getGlobalState("apiProvider") as Promise<ApiProvider | undefined>,
 			this.getGlobalState("apiModelId") as Promise<string | undefined>,
@@ -1297,6 +1418,10 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			this.getGlobalState("vsCodeLmModelSelector") as Promise<vscode.LanguageModelChatSelector | undefined>,
 			this.getGlobalState("localeLanguage") as Promise<string | undefined>,
 			this.getGlobalState("userInfo") as Promise<UserInfo | undefined>,
+			this.getSecret("authToken") as Promise<string | undefined>,
+			this.getGlobalState("previousModeApiProvider") as Promise<ApiProvider | undefined>,
+			this.getGlobalState("previousModeModelId") as Promise<string | undefined>,
+			this.getGlobalState("previousModeModelInfo") as Promise<ModelInfo | undefined>,
 		])
 
 		let apiProvider: ApiProvider
@@ -1349,7 +1474,12 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			autoApprovalSettings: autoApprovalSettings || DEFAULT_AUTO_APPROVAL_SETTINGS, // default value can be 0 or empty string
 			browserSettings: browserSettings || DEFAULT_BROWSER_SETTINGS,
 			chatSettings: chatSettings || DEFAULT_CHAT_SETTINGS,
+			localeLanguage,
 			userInfo,
+			authToken,
+			previousModeApiProvider,
+			previousModeModelId,
+			previousModeModelInfo,
 		}
 	}
 
