@@ -2712,13 +2712,15 @@ export class Cline {
 								// }
 
 								this.isAwaitingPlanResponse = true
-								const { text, images } = await this.ask("plan_mode_response", response, false)
+								let { text, images } = await this.ask("plan_mode_response", response, false)
 								this.isAwaitingPlanResponse = false
 
+								// webview invoke sendMessage will send this marker in order to put webview into the proper state (responding to an ask) and as a flag to extension that the user switched to ACT mode.
+								if (text === "PLAN_MODE_TOGGLE_RESPONSE") {
+									text = ""
+								}
+
 								if (this.didRespondToPlanAskBySwitchingMode) {
-									if (text) {
-										await this.say("user_feedback", text ?? "", images)
-									}
 									pushToolResult(
 										formatResponse.toolResult(
 											`[The user has switched to ACT MODE, so you may now proceed with the task.]` +
@@ -2728,6 +2730,13 @@ export class Cline {
 											images,
 										),
 									)
+								} else {
+									// if we didn't switch to ACT MODE, then we can just send the user_feedback message
+									pushToolResult(formatResponse.toolResult(`<user_message>\n${text}\n</user_message>`, images))
+								}
+
+								if (text || images?.length) {
+									await this.say("user_feedback", text ?? "", images)
 								}
 
 								//
