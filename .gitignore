@@ -13,3 +13,4 @@ pnpm-lock.yaml
 .venv/
 .pytest_cache/
 __pycache__/
+.coverage
