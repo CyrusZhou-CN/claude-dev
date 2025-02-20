@@ -23,6 +23,7 @@ const McpView = ({ onDone }: McpViewProps) => {
 
 	useEffect(() => {
 		vscode.postMessage({ type: "silentlyRefreshMcpMarketplace" })
+		vscode.postMessage({ type: "fetchLatestMcpServersFromHub" })
 	}, [])
 
 	// const [servers, setServers] = useState<McpServer[]>([
@@ -171,14 +172,11 @@ const McpView = ({ onDone }: McpViewProps) => {
 										flexDirection: "column",
 										alignItems: "center",
 										gap: "12px",
-										marginTop: "20px",
+										marginTop: 20,
+										marginBottom: 20,
 										color: "var(--vscode-descriptionForeground)",
 									}}>
-									<div>No MCP servers installed yet</div>
-									<VSCodeButton appearance="primary" onClick={() => setActiveTab("marketplace")}>
-										<span className="codicon codicon-cloud-download" style={{ marginRight: "6px" }} />
-										Browse Marketplace
-									</VSCodeButton>
+									No MCP servers installed
 								</div>
 							)}
 
