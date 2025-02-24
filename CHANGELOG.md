@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.5.0
+
+### Minor Changes
+
+-   87670a3: Added timeout configuration for individual MCP servers.
+
+### Patch Changes
+
+-   82f1f79: fix: make AWS Bedrock authentication predictable
+-   9b66eac: Add translation to CODE_OF_CONDUCT, CONTRIBUTING and README to Arabic ar-sa.
+-   45e1f58: A new MCP Marketplace display setting has been added to VSCode settings. (It is defaulted to "true")
+-   0f12400: Adjustment to MCP server installation prompt
+
 ## [3.4.6]
 
 -   Add support for Claude 3.7 Sonnet
