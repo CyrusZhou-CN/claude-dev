@@ -24,6 +24,7 @@ import {
 	McpServer,
 	McpTool,
 	McpToolCallResponse,
+	MIN_MCP_TIMEOUT_SECONDS,
 } from "../../shared/mcp"
 import { fileExistsAtPath } from "../../utils/fs"
 import { arePathsEqual } from "../../utils/path"
@@ -36,14 +37,13 @@ export type McpConnection = {
 
 const AutoApproveSchema = z.array(z.string()).default([])
 
-// StdioServerParameters
 const StdioConfigSchema = z.object({
 	command: z.string(),
 	args: z.array(z.string()).optional(),
 	env: z.record(z.string()).optional(),
 	autoApprove: AutoApproveSchema.optional(),
 	disabled: z.boolean().optional(),
-	timeout: z.number().min(1).max(3600).optional().default(DEFAULT_MCP_TIMEOUT_SECONDS),
+	timeout: z.number().min(MIN_MCP_TIMEOUT_SECONDS).optional().default(DEFAULT_MCP_TIMEOUT_SECONDS),
 })
 
 const McpSettingsSchema = z.object({
@@ -571,7 +571,6 @@ export class McpHub {
 			timeout = secondsToMs(parsedConfig.timeout)
 		} catch (error) {
 			console.error(`Failed to parse timeout configuration for server ${serverName}: ${error}`)
-			// Continue with default timeout
 		}
 
 		return await connection.client.request(
@@ -611,7 +610,6 @@ export class McpHub {
 				autoApprove.splice(toolIndex, 1)
 			}
 
-			// Write updated config back to file
 			await fs.writeFile(settingsPath, JSON.stringify(config, null, 2))
 
 			// Update the tools list to reflect the change
@@ -659,7 +657,7 @@ export class McpHub {
 			// Validate timeout against schema
 			const setConfigResult = StdioConfigSchema.shape.timeout.safeParse(timeout)
 			if (!setConfigResult.success) {
-				throw new Error(`Invalid timeout value: ${timeout}. Must be between 1 and 3600 seconds.`)
+				throw new Error(`Invalid timeout value: ${timeout}. Must be at minimum ${MIN_MCP_TIMEOUT_SECONDS} seconds.`)
 			}
 
 			const settingsPath = await this.getMcpSettingsFilePath()
@@ -670,19 +668,14 @@ export class McpHub {
 				throw new Error(`Server "${serverName}" not found in settings`)
 			}
 
-			// Update the timeout in the config
 			config.mcpServers[serverName] = {
 				...config.mcpServers[serverName],
 				timeout,
 			}
 
-			// Write updated config back to file
 			await fs.writeFile(settingsPath, JSON.stringify(config, null, 2))
 
-			// Update server connections to apply the new timeout
 			await this.updateServerConnections(config.mcpServers)
-
-			vscode.window.showInformationMessage(`Updated timeout to ${timeout} seconds`)
 		} catch (error) {
 			console.error("Failed to update server timeout:", error)
 			if (error instanceof Error) {
