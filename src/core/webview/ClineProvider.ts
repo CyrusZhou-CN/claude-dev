@@ -139,18 +139,6 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		cleanupLegacyCheckpoints(this.context.globalStorageUri.fsPath, this.outputChannel).catch((error) => {
 			console.error("Failed to cleanup legacy checkpoints:", error)
 		})
-
-		// Set defaults for new users
-		;(async () => {
-			const existingPlanActSeparateModelsSetting = await this.getGlobalState("planActSeparateModelsSetting")
-			if (existingPlanActSeparateModelsSetting === undefined) {
-				// If api provider is not set, it's a new user. In order to get past the welcome screen, the user needs to choose an api provider and api key (logging into cline sets provider to cline). This is a good opportunity to set values for NEW users that we don't want to modify defaults for existing users. For example, existing users may already be using model switching between plan/act, but new users shouldn't be opted in to this behavior by default.
-				const apiProvider = await this.getGlobalState("apiProvider")
-				if (!apiProvider) {
-					await this.updateGlobalState("planActSeparateModelsSetting", false)
-				}
-			}
-		})()
 	}
 
 	/*
@@ -966,6 +954,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 				case "vertex":
 				case "gemini":
 				case "asksage":
+				case "openai-native":
 					await this.updateGlobalState("previousModeModelId", apiConfiguration.apiModelId)
 					break
 				case "openrouter":
@@ -1004,6 +993,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 					case "vertex":
 					case "gemini":
 					case "asksage":
+					case "openai-native":
 						await this.updateGlobalState("apiModelId", newModelId)
 						break
 					case "openrouter":
@@ -1989,7 +1979,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 			asksageApiUrl,
 			xaiApiKey,
 			thinkingBudgetTokens,
-			planActSeparateModelsSetting,
+			planActSeparateModelsSettingRaw,
 		] = await Promise.all([
 			this.getGlobalState("apiProvider") as Promise<ApiProvider | undefined>,
 			this.getGlobalState("apiModelId") as Promise<string | undefined>,
@@ -2072,6 +2062,24 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 
 		const mcpMarketplaceEnabled = vscode.workspace.getConfiguration("cline").get<boolean>("mcpMarketplace.enabled", true)
 
+		// Plan/Act separate models setting is a boolean indicating whether the user wants to use different models for plan and act. Existing users expect this to be enabled, while we want new users to opt in to this being disabled by default.
+		// On win11 state sometimes initializes as empty string instead of undefined
+		let planActSeparateModelsSetting: boolean | undefined = undefined
+		if (planActSeparateModelsSettingRaw === true || planActSeparateModelsSettingRaw === false) {
+			planActSeparateModelsSetting = planActSeparateModelsSettingRaw
+		} else {
+			// default to true for existing users
+			if (storedApiProvider) {
+				planActSeparateModelsSetting = true
+			} else {
+				// default to false for new users
+				planActSeparateModelsSetting = false
+			}
+			// this is a special case where it's a new state, but we want it to default to different values for existing and new users.
+			// persist so next time state is retrieved it's set to the correct value.
+			await this.updateGlobalState("planActSeparateModelsSetting", planActSeparateModelsSetting)
+		}
+
 		return {
 			apiConfiguration: {
 				apiProvider,
@@ -2135,7 +2143,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 			previousModeThinkingBudgetTokens,
 			mcpMarketplaceEnabled,
 			telemetrySetting: telemetrySetting || "unset",
-			planActSeparateModelsSetting: planActSeparateModelsSetting ?? true,
+			planActSeparateModelsSetting,
 		}
 	}
 
