@@ -14,7 +14,6 @@ export class DiffViewProvider {
 	editType?: "create" | "modify"
 	isEditing = false
 	originalContent: string | undefined
-	skipAnimation = false
 	private createdDirs: string[] = []
 	private documentWasOpen = false
 	private relPath?: string
@@ -22,11 +21,21 @@ export class DiffViewProvider {
 	private activeDiffEditor?: vscode.TextEditor
 	private fadedOverlayController?: DecorationController
 	private activeLineController?: DecorationController
+	private skipAnimation: boolean
 	private streamedLines: string[] = []
 	private preDiagnostics: [vscode.Uri, vscode.Diagnostic[]][] = []
+	private configWatcher: vscode.Disposable
 
 	constructor(private cwd: string) {
+		// Initialize skipAnimation from configuration
 		this.skipAnimation = vscode.workspace.getConfiguration("cline.editor").get("skipDiffAnimation", false)
+
+		// Add configuration watcher
+		this.configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+			if (e.affectsConfiguration("cline.editor.skipDiffAnimation")) {
+				this.skipAnimation = vscode.workspace.getConfiguration("cline.editor").get("skipDiffAnimation", false)
+			}
+		})
 	}
 
 	async open(relPath: string): Promise<void> {
@@ -95,37 +104,31 @@ export class DiffViewProvider {
 			throw new Error("User closed text editor, unable to edit file...")
 		}
 
-		// Place cursor at the beginning of the diff editor
+		// Place cursor at the beginning of the diff editor to keep it out of the way of the stream animation
 		const beginningOfDocument = new vscode.Position(0, 0)
 		diffEditor.selection = new vscode.Selection(beginningOfDocument, beginningOfDocument)
 
+		// Stub for skip Animation
 		if (this.skipAnimation) {
-			// Apply all changes at once if animation is disabled
-			const edit = new vscode.WorkspaceEdit()
-			const rangeToReplace = new vscode.Range(0, 0, document.lineCount, 0)
-			const contentToReplace = accumulatedLines.join("\n") + "\n"
-			edit.replace(document.uri, rangeToReplace, contentToReplace)
-			await vscode.workspace.applyEdit(edit)
-			this.streamedLines = accumulatedLines
-		} else {
-			// Original animation logic
-			for (let i = 0; i < diffLines.length; i++) {
-				const currentLine = this.streamedLines.length + i
-				const edit = new vscode.WorkspaceEdit()
-				const rangeToReplace = new vscode.Range(0, 0, currentLine + 1, 0)
-				const contentToReplace = accumulatedLines.slice(0, currentLine + 1).join("\n") + "\n"
-				edit.replace(document.uri, rangeToReplace, contentToReplace)
-				await vscode.workspace.applyEdit(edit)
-				// Update decorations
-				this.activeLineController.setActiveLine(currentLine)
-				this.fadedOverlayController.updateOverlayAfterLine(currentLine, document.lineCount)
-				// Scroll to the current line
-				this.scrollEditorToLine(currentLine)
-			}
-			// Update the streamedLines with the new accumulated content
-			this.streamedLines = accumulatedLines
 		}
 
+		for (let i = 0; i < diffLines.length; i++) {
+			const currentLine = this.streamedLines.length + i
+			// Replace all content up to the current line with accumulated lines
+			// This is necessary (as compared to inserting one line at a time) to handle cases where html tags on previous lines are auto closed for example
+			const edit = new vscode.WorkspaceEdit()
+			const rangeToReplace = new vscode.Range(0, 0, currentLine + 1, 0)
+			const contentToReplace = accumulatedLines.slice(0, currentLine + 1).join("\n") + "\n"
+			edit.replace(document.uri, rangeToReplace, contentToReplace)
+			await vscode.workspace.applyEdit(edit)
+			// Update decorations
+			this.activeLineController.setActiveLine(currentLine)
+			this.fadedOverlayController.updateOverlayAfterLine(currentLine, document.lineCount)
+			// Scroll to the current line
+			this.scrollEditorToLine(currentLine)
+		}
+		// Update the streamedLines with the new accumulated content
+		this.streamedLines = accumulatedLines
 		if (isFinal) {
 			// Handle any remaining lines if the new content is shorter than the original
 			if (this.streamedLines.length < document.lineCount) {
@@ -386,5 +389,9 @@ export class DiffViewProvider {
 		this.activeLineController = undefined
 		this.streamedLines = []
 		this.preDiagnostics = []
+	}
+
+	disposeAll() {
+		this.configWatcher.dispose()
 	}
 }
