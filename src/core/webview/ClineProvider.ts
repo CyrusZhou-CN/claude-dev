@@ -14,6 +14,7 @@ import { fetchOpenGraphData, isImageUrl } from "../../integrations/misc/link-pre
 import { selectImages } from "../../integrations/misc/process-images"
 import { getTheme } from "../../integrations/theme/getTheme"
 import WorkspaceTracker from "../../integrations/workspace/WorkspaceTracker"
+import { ClineAccountService } from "../../services/account/ClineAccountService"
 import { McpHub } from "../../services/mcp/McpHub"
 import { UserInfo } from "../../shared/UserInfo"
 import { ApiConfiguration, ApiProvider, ModelInfo } from "../../shared/api"
@@ -39,6 +40,7 @@ import CheckpointTracker from "../../integrations/checkpoints/CheckpointTracker"
 import { getTotalTasksSize } from "../../utils/storage"
 import { ConversationTelemetryService } from "../../services/telemetry/ConversationTelemetryService"
 import { GlobalFileNames } from "../../global-constants"
+import delay from "delay"
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -122,6 +124,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 	private cline?: Cline
 	workspaceTracker?: WorkspaceTracker
 	mcpHub?: McpHub
+	accountService?: ClineAccountService
 	private latestAnnouncementId = "feb-19-2025" // update to some unique identifier when we add a new announcement
 	conversationTelemetryService: ConversationTelemetryService
 
@@ -133,6 +136,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		ClineProvider.activeInstances.add(this)
 		this.workspaceTracker = new WorkspaceTracker(this)
 		this.mcpHub = new McpHub(this)
+		this.accountService = new ClineAccountService(this)
 		this.conversationTelemetryService = new ConversationTelemetryService(this)
 
 		// Clean up legacy checkpoints
@@ -164,6 +168,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		this.workspaceTracker = undefined
 		this.mcpHub?.dispose()
 		this.mcpHub = undefined
+		this.accountService = undefined
 		this.conversationTelemetryService.shutdown()
 		this.outputChannel.appendLine("Disposed all disposables")
 		ClineProvider.activeInstances.delete(this)
@@ -723,6 +728,14 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 					}
 					case "accountLogoutClicked": {
 						await this.handleSignOut()
+						break
+					}
+					case "showAccountViewClicked": {
+						await this.postMessageToWebview({ type: "action", action: "accountButtonClicked" })
+						break
+					}
+					case "fetchUserCreditsData": {
+						await this.fetchUserCreditsData()
 						break
 					}
 					case "showMcpView": {
@@ -1314,6 +1327,20 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	// Account
+
+	async fetchUserCreditsData() {
+		try {
+			await Promise.all([
+				this.accountService?.fetchBalance(),
+				this.accountService?.fetchUsageTransactions(),
+				this.accountService?.fetchPaymentTransactions(),
+			])
+		} catch (error) {
+			console.error("Failed to fetch user credits data:", error)
+		}
+	}
+
 	// Auth
 
 	public async validateAuthState(state: string | null): Promise<boolean> {
@@ -1352,7 +1379,7 @@ export class ClineProvider implements vscode.WebviewViewProvider {
 			}
 
 			await this.postStateToWebview()
-			vscode.window.showInformationMessage("Successfully logged in to Cline")
+			// vscode.window.showInformationMessage("Successfully logged in to Cline")
 		} catch (error) {
 			console.error("Failed to handle auth callback:", error)
 			vscode.window.showErrorMessage("Failed to log in to Cline")
@@ -1720,6 +1747,93 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 			openRouterModels: models,
 		})
 		return models
+	}
+
+	// Context menus and code actions
+
+	getFileMentionFromPath(filePath: string) {
+		const cwd = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0)
+		if (!cwd) {
+			return "@/" + filePath
+		}
+		const relativePath = path.relative(cwd, filePath)
+		return "@/" + relativePath
+	}
+
+	// 'Add to Cline' context menu in editor and code action
+	async addSelectedCodeToChat(code: string, filePath: string, languageId: string) {
+		// Ensure the sidebar view is visible
+		await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
+		await delay(100)
+
+		// Post message to webview with the selected code
+		const fileMention = this.getFileMentionFromPath(filePath)
+		await this.postMessageToWebview({
+			type: "addToInput",
+			text: `${fileMention}\n\`\`\`\n${code}\n\`\`\``,
+		})
+
+		console.log("addSelectedCodeToChat", code, filePath, languageId)
+	}
+
+	// 'Add to Cline' context menu in Terminal
+	async addSelectedTerminalOutputToChat(output: string, terminalName: string) {
+		// Ensure the sidebar view is visible
+		await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
+		await delay(100)
+
+		// Post message to webview with the selected terminal output
+		// await this.postMessageToWebview({
+		//     type: "addSelectedTerminalOutput",
+		//     output,
+		//     terminalName
+		// })
+
+		await this.postMessageToWebview({
+			type: "addToInput",
+			text: `Terminal output:\n\`\`\`\n${output}\n\`\`\``,
+		})
+
+		console.log("addSelectedTerminalOutputToChat", output, terminalName)
+	}
+
+	// 'Fix with Cline' in code actions
+	async fixWithCline(code: string, filePath: string, languageId: string, diagnostics: vscode.Diagnostic[]) {
+		// Ensure the sidebar view is visible
+		await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
+		await delay(100)
+
+		const fileMention = this.getFileMentionFromPath(filePath)
+
+		let problemsString = ""
+		for (const diagnostic of diagnostics) {
+			let label: string
+			switch (diagnostic.severity) {
+				case vscode.DiagnosticSeverity.Error:
+					label = "Error"
+					break
+				case vscode.DiagnosticSeverity.Warning:
+					label = "Warning"
+					break
+				case vscode.DiagnosticSeverity.Information:
+					label = "Information"
+					break
+				case vscode.DiagnosticSeverity.Hint:
+					label = "Hint"
+					break
+				default:
+					label = "Diagnostic"
+			}
+			const line = diagnostic.range.start.line + 1 // VSCode lines are 0-indexed
+			const source = diagnostic.source ? `${diagnostic.source} ` : ""
+			problemsString += `\n- [${source}${label}] Line ${line}: ${diagnostic.message}`
+		}
+
+		await this.initClineWithTask(
+			`Fix the following code in ${fileMention}\n\`\`\`\n${code}\n\`\`\`\n\nProblems:\n${problemsString.trim()}`,
+		)
+
+		console.log("fixWithCline", code, filePath, languageId, diagnostics, problemsString)
 	}
 
 	// Task history
@@ -2160,7 +2274,8 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 				qwenApiLine,
 				mistralApiKey,
 				azureApiVersion,
-				openRouterModelId,
+				// Fixes bug where switching to plan/act would result in setting this model id to previousModeModelId which may have been a non-string value by default, causing a type error in the webview when calling .toLowerCase() on it.
+				openRouterModelId: openRouterModelId ? String(openRouterModelId) : undefined,
 				openRouterModelInfo,
 				openRouterProviderSorting,
 				vsCodeLmModelSelector,
@@ -2182,7 +2297,7 @@ Here is the project's README to help you get started:\n\n${mcpDetails.readmeCont
 			chatSettings: chatSettings || DEFAULT_CHAT_SETTINGS,
 			userInfo,
 			previousModeApiProvider,
-			previousModeModelId,
+			previousModeModelId: previousModeModelId ? String(previousModeModelId) : undefined,
 			previousModeModelInfo,
 			previousModeThinkingBudgetTokens,
 			mcpMarketplaceEnabled,
