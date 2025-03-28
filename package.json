@@ -261,6 +261,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Controls whether the MCP Marketplace is enabled."
+				},
+				"cline.conversationObservability": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "Share message data, code, and more extensive observability. This data may be used to improve prompts used in Cline, train models, and understand failure states more accurately. [Learn more](https://docs.cline.bot/more-info/conversation-observability)"
 				}
 			}
 		}
@@ -281,6 +286,7 @@
 		"format:fix": "prettier . --write",
 		"test": "vscode-test",
 		"test:ci": "node scripts/test-ci.js",
+		"test:coverage": "vscode-test --coverage",
 		"install:all": "npm install && cd webview-ui && npm install",
 		"dev:webview": "cd webview-ui && npm run dev",
 		"build:webview": "cd webview-ui && npm run build",
